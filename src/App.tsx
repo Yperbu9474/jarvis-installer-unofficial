@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import type { InstallMode, InstallProfile, LifecycleAction, SystemSummary } from './lib/types';
+import type { InstallMode, InstallProfile, InstallState, LifecycleAction, SystemSummary } from './lib/types';
 
 const defaultProfile: InstallProfile = {
   mode: 'native',
@@ -107,6 +107,7 @@ export default function App() {
   const [activity, setActivity] = useState('Loading environment details...');
   const [logText, setLogText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [installState, setInstallState] = useState<InstallState | null>(null);
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const terminalMount = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -120,8 +121,19 @@ export default function App() {
           window.jarvisApi.getProfile(),
         ]);
         setSummary(systemSummary);
-        setProfile(normalizeProfile({ ...defaultProfile, ...saved }, systemSummary));
-        setActivity('Ready to install or manage Jarvis.');
+        const nextProfile = normalizeProfile({ ...defaultProfile, ...saved }, systemSummary);
+        setProfile(nextProfile);
+        const state = await window.jarvisApi.detectState(nextProfile);
+        setInstallState(state);
+        if (state.running) {
+          const logs = await window.jarvisApi.lifecycle(nextProfile, 'logs');
+          setLogText(logs.output || 'Jarvis is already running.');
+          setActivity(`Jarvis is already running. Dashboard: ${state.dashboardUrl}`);
+        } else if (state.installed) {
+          setActivity('Jarvis is already installed. The primary action will start it instead of reinstalling.');
+        } else {
+          setActivity('Ready to install or manage Jarvis.');
+        }
       } catch (error) {
         setActivity(`Failed to inspect host environment: ${String(error)}`);
       }
@@ -190,6 +202,8 @@ export default function App() {
     const normalized = normalizeProfile(nextProfile, summary);
     setProfile(normalized);
     await window.jarvisApi.saveProfile(normalized);
+    const state = await window.jarvisApi.detectState(normalized);
+    setInstallState(state);
   }
 
   async function handleInstall() {
@@ -199,11 +213,34 @@ export default function App() {
     }
 
     setBusy(true);
-    setActivity(`Installing Jarvis in ${modeContent[normalizedProfile.mode].label} mode...`);
+    setActivity(`Checking existing Jarvis state in ${modeContent[normalizedProfile.mode].label} mode...`);
     try {
+      const state = await window.jarvisApi.detectState(normalizedProfile);
+      setInstallState(state);
+
+      if (state.running) {
+        const logs = await window.jarvisApi.lifecycle(normalizedProfile, 'logs');
+        setLogText(logs.output || 'Jarvis is already running.');
+        setActivity(`Jarvis is already running. Dashboard expected at ${state.dashboardUrl}`);
+        return;
+      }
+
+      if (state.installed) {
+        const startResult = await window.jarvisApi.lifecycle(normalizedProfile, 'start');
+        const logs = await window.jarvisApi.lifecycle(normalizedProfile, 'logs');
+        setLogText(logs.output || startResult.output || 'Jarvis started.');
+        setActivity(startResult.ok ? `Jarvis was already installed and has been started.` : 'Jarvis is installed but failed to start. Review logs below.');
+        const refreshed = await window.jarvisApi.detectState(normalizedProfile);
+        setInstallState(refreshed);
+        return;
+      }
+
+      setActivity(`Installing Jarvis in ${modeContent[normalizedProfile.mode].label} mode...`);
       const result = await window.jarvisApi.install(normalizedProfile);
       setLogText(result.output || 'Installer completed without additional output.');
       setActivity(result.ok ? `Install finished. Dashboard expected at ${result.dashboardUrl}` : 'Install failed. Review the output below.');
+      const refreshed = await window.jarvisApi.detectState(normalizedProfile);
+      setInstallState(refreshed);
     } catch (error) {
       setLogText(String(error));
       setActivity('Install failed before completion.');
@@ -440,6 +477,11 @@ export default function App() {
             <div className="badgeRow">
               <span className="badge neutral">{modeContent[normalizedProfile.mode].label}</span>
               <span className="badge neutral">{dashboardUrl}</span>
+              {installState ? (
+                <span className={`badge ${installState.running ? 'good' : installState.installed ? 'warn' : 'neutral'}`}>
+                  {installState.running ? 'Running' : installState.installed ? 'Installed' : 'Not installed'}
+                </span>
+              ) : null}
             </div>
           </div>
           <div className="buttonRow">

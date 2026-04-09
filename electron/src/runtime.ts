@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import type { InstallMode, InstallProfile, LifecycleAction, LifecycleResult, SystemSummary } from '../../src/lib/types';
+import type { InstallMode, InstallProfile, InstallState, LifecycleAction, LifecycleResult, SystemSummary } from '../../src/lib/types';
 
 type CommandResult = {
   ok: boolean;
@@ -148,6 +148,41 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     ok: result.ok,
     action,
     output: `${result.stdout}${result.stderr}`.trim(),
+    dashboardUrl,
+  };
+}
+
+export async function detectInstallState(profile: InstallProfile): Promise<InstallState> {
+  const dashboardUrl = `http://localhost:${profile.port || 3142}`;
+
+  if (profile.mode === 'docker') {
+    const containerName = profile.containerName || 'jarvis-daemon';
+    const result = await runProfileCommand(
+      profile,
+      os.platform() === 'win32'
+        ? `$name="${containerName}"; docker inspect $name --format "{{.State.Status}}" 2>$null`
+        : `docker inspect '${containerName.replace(/'/g, `'\\''`)}' --format "{{.State.Status}}" 2>/dev/null`,
+    );
+    const status = `${result.stdout}${result.stderr}`.trim().toLowerCase();
+    return {
+      installed: result.ok || status.includes('running') || status.includes('exited'),
+      running: status.includes('running'),
+      mode: profile.mode,
+      details: status || 'No Docker container detected.',
+      dashboardUrl,
+    };
+  }
+
+  const versionResult = await runProfileCommand(profile, 'jarvis version');
+  const statusResult = versionResult.ok ? await runProfileCommand(profile, 'jarvis status') : null;
+  const statusOutput = `${statusResult?.stdout || ''}${statusResult?.stderr || ''}`.trim();
+  const normalized = statusOutput.toLowerCase();
+
+  return {
+    installed: versionResult.ok,
+    running: normalized.includes('running'),
+    mode: profile.mode,
+    details: versionResult.ok ? statusOutput || versionResult.stdout.trim() || 'Jarvis CLI detected.' : 'Jarvis CLI not detected.',
     dashboardUrl,
   };
 }

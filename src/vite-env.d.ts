@@ -1,12 +1,13 @@
 /// <reference types="vite/client" />
 
-import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, SystemSummary } from './lib/types';
+import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, InstallState, SystemSummary } from './lib/types';
 
 declare global {
   interface Window {
     jarvisApi: {
       systemSummary: () => Promise<SystemSummary>;
       getProfile: () => Promise<InstallProfile | null>;
+      detectState: (profile: InstallProfile) => Promise<InstallState>;
       saveProfile: (profile: InstallProfile) => Promise<InstallProfile>;
       install: (profile: InstallProfile) => Promise<InstallResult>;
       lifecycle: (profile: InstallProfile, action: LifecycleAction) => Promise<LifecycleResult>;

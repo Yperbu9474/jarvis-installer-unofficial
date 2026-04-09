@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('jarvisApi', {
   systemSummary: () => ipcRenderer.invoke('jarvis:systemSummary'),
   getProfile: () => ipcRenderer.invoke('jarvis:getProfile'),
+  detectState: (profile: unknown) => ipcRenderer.invoke('jarvis:detectState', profile),
   saveProfile: (profile: unknown) => ipcRenderer.invoke('jarvis:saveProfile', profile),
   install: (profile: unknown) => ipcRenderer.invoke('jarvis:install', profile),
   lifecycle: (profile: unknown, action: string) => ipcRenderer.invoke('jarvis:lifecycle', { profile, action }),

@@ -9,6 +9,7 @@ import {
   writeTerminal,
 } from './src/pty';
 import {
+  detectJarvisState,
   getSavedProfile,
   installJarvis,
   loadSystemSummary,
@@ -57,6 +58,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('jarvis:systemSummary', async () => loadSystemSummary());
 ipcMain.handle('jarvis:getProfile', async () => getSavedProfile());
+ipcMain.handle('jarvis:detectState', async (_event, profile) => detectJarvisState(profile));
 ipcMain.handle('jarvis:saveProfile', async (_event, profile) => saveProfile(profile));
 ipcMain.handle('jarvis:install', async (_event, profile) => installJarvis(profile));
 ipcMain.handle('jarvis:lifecycle', async (_event, payload) => runLifecycleAction(payload.profile, payload.action));

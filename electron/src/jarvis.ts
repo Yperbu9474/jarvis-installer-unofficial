@@ -2,8 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { app } from 'electron';
-import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, SystemSummary } from '../../src/lib/types';
-import { lifecycle, loadSystemSummary, runProfileCommand } from './runtime';
+import type { InstallProfile, InstallResult, InstallState, LifecycleAction, LifecycleResult, SystemSummary } from '../../src/lib/types';
+import { detectInstallState, lifecycle, loadSystemSummary, runProfileCommand } from './runtime';
 
 const PROFILE_PATH = () => path.join(app.getPath('userData'), 'profile.json');
 
@@ -159,6 +159,10 @@ export async function installJarvis(profile: InstallProfile): Promise<InstallRes
 
 export async function runLifecycleAction(profile: InstallProfile, action: LifecycleAction): Promise<LifecycleResult> {
   return lifecycle(profile, action);
+}
+
+export async function detectJarvisState(profile: InstallProfile): Promise<InstallState> {
+  return detectInstallState(profile);
 }
 
 export async function loadSystemSummaryWrapped(): Promise<SystemSummary> {

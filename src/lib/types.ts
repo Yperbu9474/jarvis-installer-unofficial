@@ -36,3 +36,11 @@ export type LifecycleResult = {
   output: string;
   dashboardUrl: string;
 };
+
+export type InstallState = {
+  installed: boolean;
+  running: boolean;
+  mode: InstallMode;
+  details: string;
+  dashboardUrl: string;
+};
