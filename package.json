@@ -1,6 +1,6 @@
 {
   "name": "jarvis-installer-unofficial",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Unofficial cross-platform installer and control panel for Jarvis",
   "main": "dist-electron/main.js",
@@ -11,9 +11,9 @@
   },
   "license": "MIT",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"tsup electron/main.ts electron/preload.ts --format cjs --out-dir dist-electron --watch\" \"wait-on tcp:5173 file:dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev": "concurrently -k \"vite\" \"tsup electron/main.ts electron/preload.ts --format cjs --out-dir dist-electron --external electron --watch\" \"wait-on tcp:5173 file:dist-electron/main.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "build:web": "vite build",
-    "build:electron": "tsup electron/main.ts electron/preload.ts --format cjs --out-dir dist-electron",
+    "build:electron": "tsup electron/main.ts electron/preload.ts --format cjs --out-dir dist-electron --external electron",
     "build": "npm run build:web && npm run build:electron",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && electron-builder --win nsis --publish never",
