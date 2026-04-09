@@ -9,6 +9,23 @@ type CommandResult = {
   stderr: string;
 };
 
+function stripControlNulls(value: string): string {
+  return value.replace(/\u0000/g, '').replace(/\ufeff/g, '').trim();
+}
+
+function sanitizeWslDistro(value?: string): string | undefined {
+  if (!value) return undefined;
+  const sanitized = stripControlNulls(value);
+  return sanitized || undefined;
+}
+
+function parseWslDistros(raw: string): string[] {
+  return stripControlNulls(raw)
+    .split(/\r?\n/)
+    .map((item) => stripControlNulls(item))
+    .filter(Boolean);
+}
+
 export async function execCommand(
   command: string,
   args: string[],
@@ -51,7 +68,8 @@ export async function commandExists(command: string): Promise<boolean> {
 
 export async function runProfileCommand(profile: InstallProfile, script: string): Promise<CommandResult> {
   if (profile.mode === 'wsl2') {
-    const distroArgs = profile.wslDistro ? ['-d', profile.wslDistro] : [];
+    const distro = sanitizeWslDistro(profile.wslDistro);
+    const distroArgs = distro ? ['-d', distro] : [];
     return execCommand('wsl.exe', [...distroArgs, '--', 'bash', '-lc', script]);
   }
 
@@ -69,10 +87,11 @@ export function buildTerminalLaunch(
   const jarvisCommand = purpose === 'onboard' ? 'jarvis onboard' : 'jarvis help';
 
   if (profile.mode === 'wsl2') {
-    const distroArgs = profile.wslDistro ? `-d ${profile.wslDistro} ` : '';
+    const distro = sanitizeWslDistro(profile.wslDistro);
+    const distroArgs = distro ? ['-d', distro] : [];
     return {
       shell: 'wsl.exe',
-      args: distroArgs.trim() ? distroArgs.trim().split(' ').concat(['--', 'bash', '-lc', jarvisCommand]) : ['--', 'bash', '-lc', jarvisCommand],
+      args: [...distroArgs, '--', 'bash', '-lc', jarvisCommand],
     };
   }
 
@@ -108,13 +127,7 @@ export async function loadSystemSummary(): Promise<SystemSummary> {
     hasDocker: docker,
     hasBun: bun.ok,
     bunVersion: bun.ok ? bun.stdout.trim() : undefined,
-    wslDistros:
-      platform === 'win32'
-        ? wsl.stdout
-            .split(/\r?\n/)
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : [],
+    wslDistros: platform === 'win32' ? parseWslDistros(wsl.stdout) : [],
   };
 }
 
