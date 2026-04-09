@@ -17,30 +17,29 @@ Unofficial community installer and control panel for [Jarvis](https://usejarvis.
 
 This repository is intentionally separate from the upstream [`vierisid/jarvis`](https://github.com/vierisid/jarvis) project. It wraps the official Jarvis daemon CLI and Docker image in a desktop installer and control panel. It is not an official release channel.
 
-## Status
+## What This Is
 
-This repository currently provides:
+This app helps you install and run Jarvis without doing a bunch of terminal setup by hand.
 
-- a desktop control app built with Electron + React
-- install and repair flows for:
-  - native Bun installs on macOS and Linux
-  - Docker installs on macOS, Linux, and Windows
-  - WSL2-based installs on Windows
-- a control panel for:
-  - `install`
-  - `start`
-  - `stop`
-  - `restart`
-  - `status`
-  - `logs`
-  - opening the Jarvis dashboard
-  - launching `jarvis onboard` in an embedded terminal
-- packaging for:
-  - Windows `.exe` through NSIS
-  - macOS `.dmg`
-  - Linux `AppImage`
-  - Linux `.deb`
-- bootstrap scripts for shell-based setup on desktop or server systems
+It gives you:
+
+- a normal desktop installer
+- a setup screen that asks you what kind of install you want
+- automatic checks for missing tools like Bun or Docker
+- buttons to start, stop, and restart Jarvis
+- a logs screen so you can see what Jarvis is doing
+- a quick link to the Jarvis dashboard
+
+If Jarvis is already installed, the app tries to use the existing install instead of reinstalling everything.
+
+## Who This Is For
+
+Use this if:
+
+- you want the easiest possible Jarvis setup
+- you do not want to memorize terminal commands
+- you want one app to install, start, stop, and check Jarvis
+- you want a simple control panel after setup
 
 ## Repo Links
 
@@ -48,44 +47,32 @@ This repository currently provides:
 - Upstream source repo: <https://github.com/vierisid/jarvis>
 - Unofficial installer repo: <https://github.com/Yperbu9474/jarvis-installer-unofficial>
 
-## Scope
-
-This repo does not replace the upstream Jarvis daemon. It automates installation and management of the upstream project.
-
-The desktop app is a launcher, installer, and runtime control surface. The actual Jarvis daemon still comes from:
-
-- `bun install -g @usejarvis/brain`
-- `ghcr.io/vierisid/jarvis:latest`
-- the upstream CLI behavior in `vierisid/jarvis`
-
 ## Quick Start
 
-### Download a built installer
+### 1. Download the installer
 
 Download the latest packaged installers from:
 
 <https://github.com/Yperbu9474/jarvis-installer-unofficial/releases/latest>
 
-Current release naming:
+Pick the file that matches your computer:
 
 - Windows: `Jarvis-Installer-Windows-<version>.exe`
-- macOS: `Jarvis-Installer-macOS-<version>-arm64.dmg`
+- Mac: `Jarvis-Installer-macOS-<version>-arm64.dmg`
 - Linux desktop: `Jarvis-Installer-Linux-<version>.AppImage`
 - Linux package: `Jarvis-Installer-Linux-<version>.deb`
 
-### Windows `.exe` steps
+### 2. Install it
+
+#### Windows
 
 1. Open the latest releases page.
 2. Download `Jarvis-Installer-Windows-<version>.exe`.
 3. Double-click the `.exe`.
 4. If Windows SmartScreen appears, click `More info` and then `Run anyway` if you trust the unofficial installer.
 5. Complete the installer wizard.
-6. Launch `Jarvis Installer` from the Start Menu or desktop shortcut.
-7. Pick `Docker` or `Windows WSL2` mode in the app.
-8. Click `Install or repair`.
-9. Run `Run onboarding` after installation finishes.
 
-### macOS `.dmg` steps
+#### macOS
 
 1. Open the latest releases page.
 2. Download `Jarvis-Installer-macOS-<version>-arm64.dmg`.
@@ -93,24 +80,85 @@ Current release naming:
 4. Drag `Jarvis Installer` into `Applications`.
 5. Launch it from `Applications`.
 6. If Gatekeeper blocks the first launch, open `System Settings > Privacy & Security` and allow it.
-7. Pick `Native Bun` or `Docker` mode and continue with install.
 
-### Linux desktop steps
+#### Linux
 
-AppImage:
+If you downloaded the `AppImage`:
 
 ```bash
 chmod +x Jarvis-Installer-Linux-<version>.AppImage
 ./Jarvis-Installer-Linux-<version>.AppImage
 ```
 
-Debian or Ubuntu package:
+If you downloaded the `.deb`:
 
 ```bash
 sudo apt install ./Jarvis-Installer-Linux-<version>.deb
 ```
 
-Then launch `Jarvis Installer` from the app menu or terminal.
+Then open `Jarvis Installer` from your app menu.
+
+### 3. Open Jarvis Installer
+
+When the app opens, it checks your computer and shows setup options.
+
+You usually only need to choose one install mode:
+
+- Windows:
+  - choose `Docker` if you already use Docker Desktop or want the simpler Windows option
+  - choose `Windows WSL2` if you want Jarvis to run in a Linux environment inside Windows
+- macOS:
+  - choose `Native Bun` for the normal setup
+  - choose `Docker` if you prefer containers
+- Linux:
+  - choose `Native Bun` for the normal setup
+  - choose `Docker` for servers, VPS machines, or container-based setups
+
+### 4. Click `Install or repair`
+
+The app will:
+
+- check what is already installed
+- try to install missing tools
+- install Jarvis
+- save your settings
+
+If Jarvis is already installed, the app should reuse it.
+
+### 5. Finish the Jarvis setup
+
+After install finishes:
+
+1. Click `Run onboarding`.
+2. Answer the questions in the built-in terminal.
+3. When onboarding is done, use the buttons in the app to:
+   - start Jarvis
+   - stop Jarvis
+   - restart Jarvis
+   - view logs
+   - open the dashboard
+
+If Jarvis is already running when you open the app, it should go straight to the home/logs view.
+
+## Which Option Should I Pick?
+
+If you do not know which mode to choose, use this:
+
+- Windows: `Docker`
+- Mac: `Native Bun`
+- Linux desktop: `Native Bun`
+- Linux server or VPS: `Docker`
+
+Use `Windows WSL2` only if you know you specifically want Jarvis inside WSL.
+
+## Very Short Version
+
+1. Download the installer from the latest release.
+2. Open it.
+3. Choose the recommended mode for your system.
+4. Click `Install or repair`.
+5. Click `Run onboarding`.
+6. Use the control panel to start Jarvis and watch the logs.
 
 ### Run the desktop installer locally
 
@@ -147,65 +195,45 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Yperbu9474/jarvis-installer-unofficial/main/scripts/install.ps1 | iex
 ```
 
-## Install Modes
+## What The Modes Mean
 
-### Native Bun mode
+### `Native Bun`
 
-Best for:
+This means Jarvis is installed directly on your Mac or Linux machine.
 
-- macOS laptops and desktops
-- Linux desktops
-- Linux servers where you want direct CLI control
+Choose this if you want the normal setup and do not care about Docker.
 
-What it does:
+### `Docker`
 
-- installs Bun if missing
-- installs the upstream Jarvis package globally
-- optionally installs the sidecar package
-- lets the control panel run standard `jarvis` lifecycle commands
+This means Jarvis runs in a container.
 
-### Docker mode
+Choose this if:
 
-Best for:
+- you already use Docker
+- you are on a VPS
+- you want a more separated setup
+- you are on Windows and want the easiest default choice
 
-- VPS deployments
-- users who want easier isolation
-- Windows users who prefer Docker Desktop over WSL-first runtime use
+### `Windows WSL2`
 
-What it does:
+This means Jarvis runs inside the Linux system built into Windows.
 
-- installs Docker if the host allows it
-- pulls `ghcr.io/vierisid/jarvis:latest`
-- creates a persistent container and exposes the configured port
-- uses `docker start`, `docker stop`, and `docker logs` from the control panel
-
-### Windows WSL2 mode
-
-Best for:
-
-- Windows users who want the upstream Linux-style runtime
-- Windows setups where Bun + CLI workflows should live inside a Linux distro
-
-What it does:
-
-- executes the install flow inside WSL
-- uses the selected distro, or the default distro if none is chosen
-- installs Jarvis via Bun inside that WSL environment
+Choose this only if you want that on purpose.
 
 ## Control Panel
 
-The desktop app currently includes:
+After setup, the app becomes your Jarvis control panel.
 
-- environment summary
-- install mode selection
-- port configuration
-- Docker container naming
-- WSL distro selection on Windows
-- install-sidecar toggle
-- install or repair action
-- daemon lifecycle actions
-- output pane for command results
-- embedded terminal for `jarvis onboard`
+It includes:
+
+- start button
+- stop button
+- restart button
+- logs view
+- status view
+- dashboard link
+
+You should be able to open this app later and use it as your main Jarvis launcher.
 
 The primary UI entrypoint is [src/App.tsx](/home/ubuntu/jarvis-installer/src/App.tsx).
 
@@ -226,27 +254,6 @@ The primary UI entrypoint is [src/App.tsx](/home/ubuntu/jarvis-installer/src/App
 - [scripts/install.ps1](/home/ubuntu/jarvis-installer/scripts/install.ps1)
   PowerShell bootstrap for Windows.
 
-## Packaging Notes
-
-The build is configured to produce:
-
-- `.exe` on Windows with NSIS
-- `.dmg` on macOS
-- `AppImage` and `.deb` on Linux
-
-Artifacts are written to `release/`.
-
-On this host I verified:
-
-- `npm run typecheck`
-- `npm run build`
-- `npm run dist:linux`
-
-The Linux output directory currently contains:
-
-- `Jarvis Installer-0.1.0-linux-x86_64.AppImage`
-- `Jarvis Installer-0.1.0-linux-amd64.deb`
-
 ## Constraints
 
 This project can automate a lot, but there are hard limits:
@@ -258,6 +265,15 @@ This project can automate a lot, but there are hard limits:
 - upstream CLI or Docker image changes can require updates here
 
 So this repo should be described as a strong automation layer, not a mathematically guaranteed universal installer.
+
+## More Help
+
+See:
+
+- [docs/getting-started.md](/home/ubuntu/jarvis-installer/docs/getting-started.md)
+- [docs/install-modes.md](/home/ubuntu/jarvis-installer/docs/install-modes.md)
+- [docs/architecture.md](/home/ubuntu/jarvis-installer/docs/architecture.md)
+- [docs/packaging.md](/home/ubuntu/jarvis-installer/docs/packaging.md)
 
 ## Documentation
 

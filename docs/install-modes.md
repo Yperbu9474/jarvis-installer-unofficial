@@ -1,65 +1,77 @@
 # Install Modes
 
+This page explains the choices you see in the app.
+
+If you are not sure what to choose, use:
+
+- Windows: `Docker`
+- Mac: `Native`
+- Linux desktop: `Native`
+- Linux server or VPS: `Docker`
+
 ## Native
 
-The native mode is intended for macOS and Linux hosts.
+`Native` means Jarvis is installed directly on your Mac or Linux machine.
 
-Behavior:
+Choose this when:
 
-- checks for `curl`, `git`, `unzip`, and `bun`
-- installs Bun if missing
-- runs `bun install -g @usejarvis/brain`
-- optionally installs `@usejarvis/sidecar`
-- later manages the daemon through `jarvis start`, `jarvis stop`, `jarvis logs`, and related commands
+- you want the normal setup
+- you are on a Mac
+- you are on Linux and not using Docker
+- you want the most direct setup
 
-Use native mode when:
+What the app does:
 
-- you want the simplest non-container local setup
-- you want direct access to the `jarvis` CLI
-- you are running on a developer workstation or Linux host
+- checks for the tools it needs
+- installs Bun if it is missing
+- installs Jarvis
+- lets you start and stop Jarvis from the control panel
 
 ## Docker
 
-Docker mode targets desktops, servers, and Windows systems with Docker support.
+`Docker` means Jarvis runs in a container.
 
-Behavior:
+Choose this when:
+
+- you are on Windows and want the easiest default choice
+- you already use Docker
+- you are setting this up on a VPS
+- you want Jarvis separated from the rest of your system
+
+What the app does:
 
 - checks for Docker
-- attempts installation when possible
-- pulls `ghcr.io/vierisid/jarvis:latest`
-- recreates the target container
-- binds `${port}:3142`
-- stores persistent data in the configured data directory
-
-Use Docker mode when:
-
-- you want a cleaner runtime boundary
-- you are deploying on a VPS
-- you already standardize on containers
+- tries to install Docker if possible
+- downloads the Jarvis container
+- creates and starts the container
+- lets you control it from the app
 
 Limitations:
 
-- host desktop access does not magically appear because the daemon runs in Docker
-- sidecar and actuator capabilities still depend on the upstream architecture
+- your computer may still ask for admin permission
+- Docker can take longer on first install
+- some Jarvis features still depend on the upstream project, not just this installer
 
 ## WSL2
 
-WSL2 mode is intended for Windows systems.
+`WSL2` is for Windows only.
 
-Behavior:
+It runs Jarvis inside the Linux environment built into Windows.
 
-- invokes commands through `wsl.exe`
-- targets the selected distro if one is chosen
-- runs the Bun-based Jarvis installation in that distro
-- uses Linux-style Jarvis runtime commands inside WSL
-
-Use WSL2 mode when:
+Choose this when:
 
 - you want the upstream Linux runtime behavior on Windows
-- you are more comfortable debugging inside a distro than through Docker Desktop
+- you already use WSL
+- you specifically want Jarvis inside a Linux distro
 
-Limitations:
+What the app does:
+
+- runs setup through `wsl.exe`
+- installs Jarvis inside your WSL distro
+- controls Jarvis from inside that WSL environment
+
+Limitations and warnings:
 
 - WSL2 itself may not be installed or enabled
 - some systems will require administrator intervention and a reboot
-- GUI expectations differ across Windows and Linux environments
+- this is not the best default choice for most people
