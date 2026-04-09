@@ -101,6 +101,83 @@ function getRuntimeNotes(profile: InstallProfile, summary: SystemSummary | null)
   return notes;
 }
 
+type StateDetection = {
+  profile: InstallProfile;
+  state: InstallState;
+};
+
+function profileSignature(profile: InstallProfile): string {
+  return [
+    profile.mode,
+    String(profile.port || 3142),
+    profile.containerName || '',
+    profile.wslDistro || '',
+    profile.dataDir || '',
+  ].join('|');
+}
+
+function buildDetectionCandidates(profile: InstallProfile, summary: SystemSummary | null): InstallProfile[] {
+  const base = normalizeProfile(profile, summary);
+  const supportedModes = summary?.supportedModes || [base.mode];
+  const candidates: InstallProfile[] = [base];
+
+  for (const mode of supportedModes) {
+    if (mode === base.mode) continue;
+    const candidate = normalizeProfile(
+      {
+        ...base,
+        mode,
+        wslDistro: mode === 'wsl2' ? base.wslDistro || summary?.wslDistros[0] || '' : undefined,
+      },
+      summary,
+    );
+    candidates.push(candidate);
+  }
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = profileSignature(candidate);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function detectBestState(profile: InstallProfile, summary: SystemSummary | null): Promise<StateDetection> {
+  const candidates = buildDetectionCandidates(profile, summary);
+  const attempts = await Promise.all(
+    candidates.map(async (candidate) => {
+      try {
+        const state = await window.jarvisApi.detectState(candidate);
+        return { profile: candidate, state };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const results = attempts.filter((item): item is StateDetection => Boolean(item));
+  const running = results.find((item) => item.state.running);
+  if (running) return running;
+
+  const installed = results.find((item) => item.state.installed);
+  if (installed) return installed;
+
+  if (results[0]) return results[0];
+
+  const fallback = candidates[0] || normalizeProfile(profile, summary);
+  return {
+    profile: fallback,
+    state: {
+      installed: false,
+      running: false,
+      mode: fallback.mode,
+      details: 'Jarvis install not detected.',
+      dashboardUrl: `http://localhost:${fallback.port || 3142}`,
+    },
+  };
+}
+
 export default function App() {
   const [summary, setSummary] = useState<SystemSummary | null>(null);
   const [profile, setProfile] = useState<InstallProfile>(defaultProfile);
@@ -121,16 +198,26 @@ export default function App() {
           window.jarvisApi.getProfile(),
         ]);
         setSummary(systemSummary);
-        const nextProfile = normalizeProfile({ ...defaultProfile, ...saved }, systemSummary);
-        setProfile(nextProfile);
-        const state = await window.jarvisApi.detectState(nextProfile);
-        setInstallState(state);
-        if (state.running) {
-          const logs = await window.jarvisApi.lifecycle(nextProfile, 'logs');
+        const preferredProfile = normalizeProfile({ ...defaultProfile, ...saved }, systemSummary);
+        const detected = await detectBestState(preferredProfile, systemSummary);
+
+        setProfile(detected.profile);
+        setInstallState(detected.state);
+
+        if (profileSignature(preferredProfile) !== profileSignature(detected.profile)) {
+          await window.jarvisApi.saveProfile(detected.profile);
+        }
+
+        if (detected.state.running) {
+          const logs = await window.jarvisApi.lifecycle(detected.profile, 'logs');
           setLogText(logs.output || 'Jarvis is already running.');
-          setActivity(`Jarvis is already running. Dashboard: ${state.dashboardUrl}`);
-        } else if (state.installed) {
-          setActivity('Jarvis is already installed. The primary action will start it instead of reinstalling.');
+          setActivity(
+            `Jarvis is already running in ${modeContent[detected.profile.mode].label} mode. Dashboard: ${detected.state.dashboardUrl}`,
+          );
+        } else if (detected.state.installed) {
+          setActivity(
+            `Jarvis is installed in ${modeContent[detected.profile.mode].label} mode. The primary action will start it instead of reinstalling.`,
+          );
         } else {
           setActivity('Ready to install or manage Jarvis.');
         }
