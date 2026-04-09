@@ -182,6 +182,23 @@ The Linux output directory currently contains:
 - `Jarvis Installer-0.1.0-linux-x86_64.AppImage`
 - `Jarvis Installer-0.1.0-linux-amd64.deb`
 
+## CI Releases
+
+GitHub Actions is configured to build native packages on native runners:
+
+- Ubuntu runner builds `AppImage` and `.deb`
+- Windows runner builds the NSIS `.exe`
+- macOS runner builds the `.dmg`
+
+Workflow file:
+
+- [.github/workflows/build-release.yml](/home/ubuntu/jarvis-installer/.github/workflows/build-release.yml)
+
+How it works:
+
+- `workflow_dispatch` uploads build artifacts for manual runs
+- pushing a tag like `v0.1.1` builds all three platforms and publishes a GitHub release with the generated artifacts
+
 ## Constraints
 
 This project can automate a lot, but there are hard limits:
