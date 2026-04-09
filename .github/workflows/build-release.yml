@@ -48,9 +48,22 @@ jobs:
           cache: npm
 
       - name: Setup Python
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Export Python for node-gyp
+        shell: pwsh
+        run: |
+          "PYTHON=${{ steps.setup-python.outputs.python-path }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "npm_config_python=${{ steps.setup-python.outputs.python-path }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify Python
+        shell: pwsh
+        run: |
+          python --version
+          "${{ steps.setup-python.outputs.python-path }}" --version
 
       - name: Install dependencies
         run: npm ci
@@ -62,7 +75,6 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          npm_config_python: ${{ env.pythonLocation }}/bin/python
         run: npm run ${{ matrix.npm_script }}
 
       - name: Upload platform artifacts
