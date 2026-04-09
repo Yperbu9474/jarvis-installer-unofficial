@@ -50,6 +50,54 @@ This starts:
 6. Run `Run onboarding` to complete `jarvis onboard`.
 7. Use the control buttons to start Jarvis and inspect logs.
 
+## Download And Run The Packaged Installer
+
+Latest release page:
+
+<https://github.com/Yperbu9474/jarvis-installer-unofficial/releases/latest>
+
+### Windows
+
+1. Download `Jarvis-Installer-Windows-<version>.exe`.
+2. Double-click the file.
+3. If SmartScreen warns about the app, use `More info` and `Run anyway` only if you trust this unofficial build.
+4. Finish the NSIS installer wizard.
+5. Open `Jarvis Installer`.
+6. Choose `Docker` or `Windows WSL2`.
+7. Click `Install or repair`.
+8. Run onboarding from the embedded terminal.
+
+### macOS
+
+1. Download `Jarvis-Installer-macOS-<version>-arm64.dmg`.
+2. Open the disk image.
+3. Drag the app into `Applications`.
+4. Launch the app.
+5. If macOS blocks first launch, allow it in `Privacy & Security`.
+6. Choose `Native Bun` or `Docker`.
+7. Click `Install or repair`.
+
+### Linux
+
+AppImage:
+
+```bash
+chmod +x Jarvis-Installer-Linux-<version>.AppImage
+./Jarvis-Installer-Linux-<version>.AppImage
+```
+
+Deb package:
+
+```bash
+sudo apt install ./Jarvis-Installer-Linux-<version>.deb
+```
+
+After launch:
+
+1. Choose `Native Bun` or `Docker`.
+2. Click `Install or repair`.
+3. Run onboarding.
+
 ## Recommended Choices
 
 - macOS or Linux desktop: `native`

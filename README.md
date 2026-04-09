@@ -47,6 +47,58 @@ The desktop app is a launcher, installer, and runtime control surface. The actua
 
 ## Quick Start
 
+### Download a built installer
+
+Download the latest packaged installers from:
+
+<https://github.com/Yperbu9474/jarvis-installer-unofficial/releases/latest>
+
+Current release naming:
+
+- Windows: `Jarvis-Installer-Windows-<version>.exe`
+- macOS: `Jarvis-Installer-macOS-<version>-arm64.dmg`
+- Linux desktop: `Jarvis-Installer-Linux-<version>.AppImage`
+- Linux package: `Jarvis-Installer-Linux-<version>.deb`
+
+### Windows `.exe` steps
+
+1. Open the latest releases page.
+2. Download `Jarvis-Installer-Windows-<version>.exe`.
+3. Double-click the `.exe`.
+4. If Windows SmartScreen appears, click `More info` and then `Run anyway` if you trust the unofficial installer.
+5. Complete the installer wizard.
+6. Launch `Jarvis Installer` from the Start Menu or desktop shortcut.
+7. Pick `Docker` or `Windows WSL2` mode in the app.
+8. Click `Install or repair`.
+9. Run `Run onboarding` after installation finishes.
+
+### macOS `.dmg` steps
+
+1. Open the latest releases page.
+2. Download `Jarvis-Installer-macOS-<version>-arm64.dmg`.
+3. Open the `.dmg`.
+4. Drag `Jarvis Installer` into `Applications`.
+5. Launch it from `Applications`.
+6. If Gatekeeper blocks the first launch, open `System Settings > Privacy & Security` and allow it.
+7. Pick `Native Bun` or `Docker` mode and continue with install.
+
+### Linux desktop steps
+
+AppImage:
+
+```bash
+chmod +x Jarvis-Installer-Linux-<version>.AppImage
+./Jarvis-Installer-Linux-<version>.AppImage
+```
+
+Debian or Ubuntu package:
+
+```bash
+sudo apt install ./Jarvis-Installer-Linux-<version>.deb
+```
+
+Then launch `Jarvis Installer` from the app menu or terminal.
+
 ### Run the desktop installer locally
 
 ```bash
