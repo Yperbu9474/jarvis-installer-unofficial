@@ -1,6 +1,6 @@
 {
   "name": "jarvis-installer-unofficial",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Unofficial cross-platform installer and control panel for Jarvis",
   "main": "dist-electron/main.js",
@@ -15,16 +15,16 @@
     "build:web": "vite build",
     "build:electron": "tsup electron/main.ts electron/preload.ts --format cjs --out-dir dist-electron",
     "build": "npm run build:web && npm run build:electron",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win nsis",
-    "dist:mac": "npm run build && electron-builder --mac dmg",
-    "dist:linux": "npm run build && electron-builder --linux AppImage deb",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "typecheck": "tsc --noEmit"
   },
   "build": {
     "appId": "dev.usejarvis.installer.unofficial",
     "productName": "Jarvis Installer",
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Jarvis-Installer-${version}-${ext}",
     "directories": {
       "output": "release"
     },
@@ -35,12 +35,14 @@
     ],
     "asar": true,
     "mac": {
+      "artifactName": "Jarvis-Installer-macOS-${version}-${arch}.${ext}",
       "category": "public.app-category.developer-tools",
       "target": [
         "dmg"
       ]
     },
     "win": {
+      "artifactName": "Jarvis-Installer-Windows-${version}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -51,6 +53,7 @@
       ]
     },
     "linux": {
+      "artifactName": "Jarvis-Installer-Linux-${version}.${ext}",
       "target": [
         "AppImage",
         "deb"
