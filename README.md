@@ -1,4 +1,17 @@
+<div align="center">
+
 # Jarvis Installer
+
+**Unofficial community installer and control panel for Jarvis**
+
+[![Release](https://img.shields.io/github/v/release/Yperbu9474/jarvis-installer-unofficial?label=release)](https://github.com/Yperbu9474/jarvis-installer-unofficial/releases)
+[![Stars](https://img.shields.io/github/stars/Yperbu9474/jarvis-installer-unofficial?style=social)](https://github.com/Yperbu9474/jarvis-installer-unofficial/stargazers)
+[![License](https://img.shields.io/badge/license-MIT-blue)](#license)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-black)](https://github.com/Yperbu9474/jarvis-installer-unofficial/releases/latest)
+[![Discord](https://img.shields.io/badge/Discord-cnc__dev-5865F2?logo=discord&logoColor=white)](https://discord.com)
+[![Discord ID](https://img.shields.io/badge/Discord%20ID-817847301003411518-5865F2)](https://discord.com)
+
+</div>
 
 Unofficial community installer and control panel for [Jarvis](https://usejarvis.dev).
 
