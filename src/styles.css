@@ -9,6 +9,8 @@
   --accent: #f4b860;
   --accent-strong: #f08a24;
   --good: #5ed39d;
+  --warn: #f0c15c;
+  --danger: #ff7a7a;
 }
 
 * {
@@ -106,6 +108,36 @@ h2 {
   gap: 18px;
 }
 
+.modeStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.modeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 18px;
+  padding: 16px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.modeCard span {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.modeCard.selected {
+  border-color: rgba(244, 184, 96, 0.6);
+  background: linear-gradient(180deg, rgba(244, 184, 96, 0.18), rgba(255, 255, 255, 0.03));
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -164,6 +196,75 @@ button:disabled {
   align-items: flex-start;
 }
 
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.badge.good {
+  border-color: rgba(94, 211, 157, 0.35);
+  color: var(--good);
+}
+
+.badge.warn {
+  border-color: rgba(240, 193, 92, 0.35);
+  color: var(--warn);
+}
+
+.badge.neutral {
+  color: var(--muted);
+}
+
+.noticeList {
+  display: grid;
+  gap: 10px;
+}
+
+.callout,
+.errorBox,
+.successBox {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+}
+
+.callout {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.errorBox {
+  background: rgba(255, 122, 122, 0.08);
+  border-color: rgba(255, 122, 122, 0.3);
+}
+
+.successBox {
+  background: rgba(94, 211, 157, 0.08);
+  border-color: rgba(94, 211, 157, 0.3);
+}
+
+.errorBox strong,
+.successBox strong,
+.callout strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.errorBox ul {
+  margin: 8px 0 0 20px;
+  color: var(--text);
+}
+
 .output {
   min-height: 220px;
   margin: 18px 0 0;
@@ -194,6 +295,10 @@ button:disabled {
   }
 
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modeStrip {
     grid-template-columns: 1fr;
   }
 }

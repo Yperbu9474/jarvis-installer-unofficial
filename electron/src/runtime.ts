@@ -55,13 +55,11 @@ export async function runProfileCommand(profile: InstallProfile, script: string)
     return execCommand('wsl.exe', [...distroArgs, '--', 'bash', '-lc', script]);
   }
 
-  if (profile.mode === 'docker' && os.platform() === 'win32') {
-    return execCommand('powershell.exe', ['-NoProfile', '-Command', script]);
+  if (os.platform() === 'win32') {
+    return execCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
   }
 
-  const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
-  const args = os.platform() === 'win32' ? ['-NoProfile', '-Command', script] : ['-lc', script];
-  return execCommand(shell, args);
+  return execCommand('bash', ['-lc', script]);
 }
 
 export function buildTerminalLaunch(
@@ -126,12 +124,13 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
 
   if (profile.mode === 'docker') {
     const containerName = profile.containerName || 'jarvis-daemon';
+    const quotedName = os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
     const dockerCommand =
       action === 'status'
-        ? `docker ps -a --filter "name=${containerName}" --format "{{.Status}}"`
+        ? `docker ps -a --filter "name=${containerName}" --format "{{.Status}}" || docker inspect ${quotedName} --format "{{.State.Status}}"`
         : action === 'logs'
-          ? `docker logs --tail 200 ${containerName}`
-          : `docker ${action} ${containerName}`;
+          ? `docker logs --tail 200 ${quotedName}`
+          : `docker ${action} ${quotedName}`;
     const result = await runProfileCommand(profile, dockerCommand);
     return {
       ok: result.ok,

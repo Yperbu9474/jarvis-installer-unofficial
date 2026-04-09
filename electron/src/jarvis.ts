@@ -47,9 +47,17 @@ fi
 `;
 }
 
+function bashQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function pwshQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 function bunBootstrapScript() {
   return `
-set -e
+set -euo pipefail
 if ! command -v curl >/dev/null 2>&1; then
   ${bashInstallPackages(['curl'])}
 fi
@@ -72,7 +80,7 @@ fi
 
 function dockerBootstrapScript() {
   return `
-set -e
+set -euo pipefail
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
 fi
@@ -83,19 +91,41 @@ fi
 `;
 }
 
+function dockerBootstrapScriptWindows() {
+  return `
+$ErrorActionPreference = 'Stop'
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  throw 'Docker is not installed. Install Docker Desktop or Docker Engine first, then rerun the installer.'
+}
+`;
+}
+
 function buildInstallScript(profile: InstallProfile): string {
   const port = profile.port || 3142;
   const repo = profile.jarvisRepo || 'https://github.com/vierisid/jarvis.git';
   const containerName = profile.containerName || 'jarvis-daemon';
-  const dataDir = profile.dataDir || (profile.mode === 'docker' ? '$HOME/.jarvis-docker' : '$HOME/.jarvis');
+  const dataDir = profile.dataDir || (profile.mode === 'docker' ? '~/.jarvis-docker' : '~/.jarvis');
 
   if (profile.mode === 'docker') {
+    if (os.platform() === 'win32') {
+      return `
+${dockerBootstrapScriptWindows()}
+$dataDir = ${pwshQuote(dataDir)}
+$containerName = ${pwshQuote(containerName)}
+$port = ${port}
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+docker pull ghcr.io/vierisid/jarvis:latest
+docker rm -f $containerName 2>$null | Out-Null
+docker run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest
+`;
+    }
+
     return `
 ${dockerBootstrapScript()}
-mkdir -p ${dataDir}
+mkdir -p ${bashQuote(dataDir)}
 docker pull ghcr.io/vierisid/jarvis:latest
-docker rm -f ${containerName} >/dev/null 2>&1 || true
-docker run -d --name ${containerName} --restart unless-stopped -p ${port}:3142 -v ${dataDir}:/data ghcr.io/vierisid/jarvis:latest
+docker rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
+docker run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest
 `;
   }
 
