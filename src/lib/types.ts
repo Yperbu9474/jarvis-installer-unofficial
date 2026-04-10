@@ -30,6 +30,12 @@ export type InstallResult = {
   dashboardUrl: string;
 };
 
+export type UpdateResult = {
+  ok: boolean;
+  output: string;
+  newVersion?: string;
+};
+
 export type LifecycleResult = {
   ok: boolean;
   action: LifecycleAction;

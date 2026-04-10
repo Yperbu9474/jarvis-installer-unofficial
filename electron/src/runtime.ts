@@ -80,6 +80,14 @@ export async function runProfileCommand(profile: InstallProfile, script: string)
   return execCommand('bash', ['-lc', script]);
 }
 
+function bunPathPreamble(): string {
+  return 'export BUN_INSTALL="$HOME/.bun"; export PATH="$HOME/.bun/bin:$PATH"; ';
+}
+
+function bashQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
 export function buildTerminalLaunch(
   profile: InstallProfile,
   purpose: 'onboard' | 'shell',
@@ -91,7 +99,7 @@ export function buildTerminalLaunch(
     const distroArgs = distro ? ['-d', distro] : [];
     return {
       shell: 'wsl.exe',
-      args: [...distroArgs, '--', 'bash', '-lc', jarvisCommand],
+      args: [...distroArgs, '--', 'bash', '-c', bunPathPreamble() + jarvisCommand + '; exec ${SHELL:-bash}'],
     };
   }
 
@@ -104,7 +112,7 @@ export function buildTerminalLaunch(
 
   return {
     shell: process.env.SHELL || '/bin/bash',
-    args: ['-lc', jarvisCommand],
+    args: ['-c', bunPathPreamble() + jarvisCommand + '; exec ${SHELL:-bash}'],
   };
 }
 
@@ -114,7 +122,7 @@ export async function loadSystemSummary(): Promise<SystemSummary> {
   const docker = await commandExists('docker');
   const bun = platform === 'win32'
     ? await execCommand('powershell.exe', ['-NoProfile', '-Command', 'if (Get-Command bun -ErrorAction SilentlyContinue) { bun --version }'])
-    : await execCommand('bash', ['-lc', 'command -v bun >/dev/null 2>&1 && bun --version']);
+    : await execCommand('bash', ['-lc', `${bunPathPreamble()}command -v bun >/dev/null 2>&1 && bun --version`]);
 
   const supportedModes: InstallMode[] =
     platform === 'win32' ? ['wsl2', 'docker'] : ['native', 'docker'];
@@ -153,9 +161,12 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     };
   }
 
+  const preamble = bunPathPreamble();
+  const dataDir = profile.dataDir;
+  const startCmd = `${preamble}jarvis start -d --port ${port}${dataDir ? ' --data-dir ' + bashQuote(dataDir) : ''}`;
   const result = await runProfileCommand(
     profile,
-    action === 'logs' ? 'jarvis logs -n 200' : `jarvis ${action}`,
+    action === 'logs' ? `${preamble}jarvis logs -n 200` : action === 'start' ? startCmd : `${preamble}jarvis ${action}`,
   );
   return {
     ok: result.ok,
@@ -186,8 +197,9 @@ export async function detectInstallState(profile: InstallProfile): Promise<Insta
     };
   }
 
-  const versionResult = await runProfileCommand(profile, 'jarvis version');
-  const statusResult = versionResult.ok ? await runProfileCommand(profile, 'jarvis status') : null;
+  const preamble = bunPathPreamble();
+  const versionResult = await runProfileCommand(profile, `${preamble}jarvis version`);
+  const statusResult = versionResult.ok ? await runProfileCommand(profile, `${preamble}jarvis status`) : null;
   const statusOutput = `${statusResult?.stdout || ''}${statusResult?.stderr || ''}`.trim();
   const normalized = statusOutput.toLowerCase();
 

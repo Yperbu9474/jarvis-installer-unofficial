@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { app } from 'electron';
-import type { InstallProfile, InstallResult, InstallState, LifecycleAction, LifecycleResult, SystemSummary } from '../../src/lib/types';
+import type { InstallProfile, InstallResult, InstallState, LifecycleAction, LifecycleResult, SystemSummary, UpdateResult } from '../../src/lib/types';
 import { detectInstallState, lifecycle, loadSystemSummary, runProfileCommand } from './runtime';
 
 const PROFILE_PATH = () => path.join(app.getPath('userData'), 'profile.json');
@@ -115,7 +115,7 @@ $containerName = ${pwshQuote(containerName)}
 $port = ${port}
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 docker pull ghcr.io/vierisid/jarvis:latest
-docker rm -f $containerName 2>$null | Out-Null
+try { docker rm -f $containerName 2>$null | Out-Null } catch { }
 docker run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest
 `;
     }
@@ -134,6 +134,29 @@ docker run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${p
 ${bunBootstrapScript()}
 bun install -g @usejarvis/brain
 ${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
+mkdir -p "$HOME/.jarvis"
+if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
+  cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
+# Jarvis configuration — edit this file then run: jarvis onboard
+daemon:
+  port: ${port}
+  data_dir: "~/.jarvis"
+
+llm:
+  primary: "anthropic"
+  fallback: []
+  anthropic:
+    api_key: ""
+
+personality:
+  core_traits:
+    - "loyal"
+    - "efficient"
+
+authority:
+  default_level: 3
+JARVIS_CONFIG_EOF
+fi
 echo "Installed Jarvis from ${repo}"
 `;
   }
@@ -142,6 +165,29 @@ echo "Installed Jarvis from ${repo}"
 ${bunBootstrapScript()}
 bun install -g @usejarvis/brain
 ${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
+mkdir -p "$HOME/.jarvis"
+if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
+  cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
+# Jarvis configuration — edit this file then run: jarvis onboard
+daemon:
+  port: ${port}
+  data_dir: "~/.jarvis"
+
+llm:
+  primary: "anthropic"
+  fallback: []
+  anthropic:
+    api_key: ""
+
+personality:
+  core_traits:
+    - "loyal"
+    - "efficient"
+
+authority:
+  default_level: 3
+JARVIS_CONFIG_EOF
+fi
 `;
 }
 
@@ -163,6 +209,45 @@ export async function runLifecycleAction(profile: InstallProfile, action: Lifecy
 
 export async function detectJarvisState(profile: InstallProfile): Promise<InstallState> {
   return detectInstallState(profile);
+}
+
+function buildUpdateScript(profile: InstallProfile): string {
+  const containerName = profile.containerName || 'jarvis-daemon';
+
+  if (profile.mode === 'docker') {
+    if (os.platform() === 'win32') {
+      return `
+$containerName = ${pwshQuote(containerName)}
+docker pull ghcr.io/vierisid/jarvis:latest
+docker restart $containerName
+`;
+    }
+    return `
+docker pull ghcr.io/vierisid/jarvis:latest
+docker restart ${bashQuote(containerName)}
+`;
+  }
+
+  // native and wsl2
+  return `
+set -euo pipefail
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$HOME/.bun/bin:$PATH"
+if command -v jarvis >/dev/null 2>&1; then
+  jarvis update || bun install -g @usejarvis/brain@latest
+else
+  bun install -g @usejarvis/brain@latest
+fi
+bun install -g @usejarvis/sidecar@latest 2>/dev/null || true
+`;
+}
+
+export async function updateJarvis(profile: InstallProfile): Promise<UpdateResult> {
+  const result = await runProfileCommand(profile, buildUpdateScript(profile));
+  return {
+    ok: result.ok,
+    output: `${result.stdout}${result.stderr}`.trim(),
+  };
 }
 
 export async function loadSystemSummaryWrapped(): Promise<SystemSummary> {

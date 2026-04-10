@@ -189,6 +189,12 @@ export default function App() {
   const terminalMount = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  // Ref so stale closures inside xterm callbacks can always read the live terminalId
+  const terminalIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    terminalIdRef.current = terminalId;
+  }, [terminalId]);
 
   useEffect(() => {
     void (async () => {
@@ -229,13 +235,14 @@ export default function App() {
 
   useEffect(() => {
     const remove = window.jarvisApi.onTerminalData(({ id, data }) => {
-      if (id === terminalId) terminalRef.current?.write(data);
+      if (id === terminalIdRef.current) terminalRef.current?.write(data);
     });
     return remove;
-  }, [terminalId]);
+  }, []);
 
+  // Terminal is initialised once on mount; terminalIdRef gives closures live access to the session
   useEffect(() => {
-    if (!terminalMount.current || terminalRef.current) return;
+    if (!terminalMount.current) return;
     const terminal = new Terminal({
       theme: {
         background: '#07111f',
@@ -250,17 +257,15 @@ export default function App() {
     terminal.open(terminalMount.current);
     fitAddon.fit();
     terminal.onData((data) => {
-      if (terminalId) {
-        void window.jarvisApi.terminalWrite(terminalId, data);
-      }
+      const id = terminalIdRef.current;
+      if (id) void window.jarvisApi.terminalWrite(id, data);
     });
     terminalRef.current = terminal;
     fitRef.current = fitAddon;
     const onResize = () => {
       fitAddon.fit();
-      if (terminalId) {
-        void window.jarvisApi.terminalResize(terminalId, terminal.cols, terminal.rows);
-      }
+      const id = terminalIdRef.current;
+      if (id) void window.jarvisApi.terminalResize(id, terminal.cols, terminal.rows);
     };
     window.addEventListener('resize', onResize);
     return () => {
@@ -268,7 +273,7 @@ export default function App() {
       terminal.dispose();
       terminalRef.current = null;
     };
-  }, [terminalId]);
+  }, []);
 
   const normalizedProfile = useMemo(() => normalizeProfile(profile, summary), [profile, summary]);
   const validationErrors = useMemo(() => getValidationErrors(normalizedProfile, summary), [normalizedProfile, summary]);
@@ -289,8 +294,16 @@ export default function App() {
     const normalized = normalizeProfile(nextProfile, summary);
     setProfile(normalized);
     await window.jarvisApi.saveProfile(normalized);
-    const state = await window.jarvisApi.detectState(normalized);
-    setInstallState(state);
+    // Only re-detect state when the mode or port changes (not on every text field keystroke)
+    if (
+      normalized.mode !== profile.mode ||
+      normalized.port !== profile.port ||
+      normalized.containerName !== profile.containerName ||
+      normalized.wslDistro !== profile.wslDistro
+    ) {
+      const state = await window.jarvisApi.detectState(normalized);
+      setInstallState(state);
+    }
   }
 
   async function handleInstall() {
@@ -348,9 +361,36 @@ export default function App() {
       const result = await window.jarvisApi.lifecycle(normalizedProfile, action);
       setLogText(result.output || `${action} completed.`);
       setActivity(result.ok ? `${action} completed.` : `${action} failed.`);
+      // Refresh install state so the status badge reflects the new daemon state
+      if (action !== 'logs') {
+        const refreshed = await window.jarvisApi.detectState(normalizedProfile);
+        setInstallState(refreshed);
+      }
     } catch (error) {
       setLogText(String(error));
       setActivity(`${action} failed before completion.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUpdate() {
+    if (!isProfileValid) {
+      setActivity('Current profile is invalid. Fix installer settings before updating.');
+      return;
+    }
+
+    setBusy(true);
+    setActivity('Updating Jarvis...');
+    try {
+      const result = await window.jarvisApi.update(normalizedProfile);
+      setLogText(result.output || 'Update completed.');
+      setActivity(result.ok ? 'Update completed.' : 'Update failed. Review the output below.');
+      const refreshed = await window.jarvisApi.detectState(normalizedProfile);
+      setInstallState(refreshed);
+    } catch (error) {
+      setLogText(String(error));
+      setActivity('Update failed before completion.');
     } finally {
       setBusy(false);
     }
@@ -381,48 +421,56 @@ export default function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div>
-          <p className="eyebrow">Unofficial community build</p>
+        <div className="sidebarLogo">
+          <p className="logoEyebrow">Unofficial community build</p>
           <h1>Jarvis Installer</h1>
-          <p className="lede">
-            A desktop installer and control panel for the upstream Jarvis daemon at
-            <span> usejarvis.dev</span>.
-          </p>
+          <p className="logoSub">Desktop installer and control panel for the upstream Jarvis daemon at usejarvis.dev</p>
         </div>
 
-        <div className="card">
-          <h2>Environment</h2>
-          <p>{summary ? `${summary.platform} • ${summary.arch} • ${summary.hostname}` : 'Inspecting host...'}</p>
-          <div className="badgeRow">
-            <span className={`badge ${summary?.hasBun ? 'good' : 'warn'}`}>Bun {summary?.hasBun ? 'ready' : 'missing'}</span>
-            <span className={`badge ${summary?.hasDocker ? 'good' : 'warn'}`}>Docker {summary?.hasDocker ? 'ready' : 'missing'}</span>
-            <span className={`badge ${summary?.wslDistros.length ? 'good' : 'neutral'}`}>WSL {summary?.wslDistros.length || 0}</span>
+        <div className="sidebarCard">
+          <p className="cardEyebrow">System</p>
+          <p className="sysLine">{summary ? `${summary.platform} · ${summary.arch} · ${summary.hostname}` : 'Inspecting…'}</p>
+          <div className="envPills">
+            <span className={`envPill ${summary?.hasBun ? 'good' : 'warn'}`}>
+              Bun {summary?.bunVersion ?? (summary?.hasBun ? '✓' : '—')} {summary?.hasBun ? '✓' : '✗'}
+            </span>
+            <span className={`envPill ${summary?.hasDocker ? 'good' : 'warn'}`}>
+              Docker {summary?.hasDocker ? '✓' : '✗'}
+            </span>
+            <span className={`envPill ${summary?.wslDistros.length ? 'good' : 'neutral'}`}>
+              WSL {summary?.wslDistros.length || '—'}
+            </span>
           </div>
-          {summary?.wslDistros.length ? <p>WSL distros: {summary.wslDistros.join(', ')}</p> : null}
+          {summary?.wslDistros.length ? <p className="wslNote">{summary.wslDistros.join(', ')}</p> : null}
         </div>
 
-        <div className="card accent">
-          <h2>Current activity</h2>
-          <p>{activity}</p>
+        <div className="sidebarCard accentCard">
+          <p className="cardEyebrow">Status</p>
+          <div className="statusIndicator">
+            <span className={`statusDot ${installState?.running ? 'good' : installState?.installed ? 'warn' : 'off'}`} />
+            <span className="statusText">
+              {installState?.running ? 'Running' : installState?.installed ? 'Installed · stopped' : 'Not installed'}
+            </span>
+          </div>
+          <p className="cardEyebrow" style={{marginTop: '12px'}}>Activity</p>
+          <p className="activityText">{activity}</p>
         </div>
 
-        <div className="card">
-          <h2>Runtime notes</h2>
+        <div className="sidebarCard">
+          <p className="cardEyebrow">Notes</p>
           <div className="noticeList">
-            {runtimeNotes.length ? runtimeNotes.map((note) => <p key={note}>{note}</p>) : <p>No immediate host warnings detected.</p>}
+            {runtimeNotes.length ? runtimeNotes.map((note) => <p className="noteItem" key={note}>{note}</p>) : <p className="noteItem muted">No host warnings.</p>}
           </div>
         </div>
       </aside>
 
       <main className="main">
+        <div className="sectionLabel">§ INSTALL</div>
         <section className="panel">
           <div className="panelHeader">
-            <div>
-              <p className="eyebrow">Install wizard</p>
-              <h2>Pick a runtime strategy</h2>
-            </div>
+            <h2>Runtime strategy</h2>
             <button className="ghost" disabled={busy} onClick={() => void window.jarvisApi.openDashboard(dashboardUrl)}>
-              Open dashboard
+              ⎋ Dashboard
             </button>
           </div>
 
@@ -436,8 +484,7 @@ export default function App() {
                   disabled={busy}
                   onClick={() => void persistProfile({ ...normalizedProfile, mode: option.value })}
                 >
-                  <strong>{option.label}</strong>
-                  <span>{modeContent[option.value].summary}</span>
+                  {option.label}
                 </button>
               );
             })}
@@ -543,24 +590,22 @@ export default function App() {
           )}
 
           <div className="buttonRow">
-            <button disabled={busy || !isProfileValid} onClick={() => void handleInstall()}>
-              Install or repair
+            <button className={busy ? 'busy' : ''} disabled={busy || !isProfileValid} onClick={() => void handleInstall()}>
+              ⊞ Install / Repair
             </button>
             <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void openOnboarding()}>
-              Run onboarding
+              ↳ Onboarding
             </button>
             <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('status')}>
-              Status
+              ◎ Status
             </button>
           </div>
         </section>
 
+        <div className="sectionLabel">§ DAEMON</div>
         <section className="panel">
           <div className="panelHeader">
-            <div>
-              <p className="eyebrow">Control panel</p>
-              <h2>Daemon controls</h2>
-            </div>
+            <h2>Daemon controls</h2>
             <div className="badgeRow">
               <span className="badge neutral">{modeContent[normalizedProfile.mode].label}</span>
               <span className="badge neutral">{dashboardUrl}</span>
@@ -571,29 +616,26 @@ export default function App() {
               ) : null}
             </div>
           </div>
+          <div className="daemonStatus">
+            <span className={`statusDot ${installState?.running ? 'good' : installState?.installed ? 'warn' : 'off'}`} />
+            <span className="daemonStatusText">
+              {installState?.running ? 'Running' : installState?.installed ? 'Installed — stopped' : 'Not installed'}
+            </span>
+          </div>
           <div className="buttonRow">
-            <button disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('start')}>
-              Start
-            </button>
-            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('stop')}>
-              Stop
-            </button>
-            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('restart')}>
-              Restart
-            </button>
-            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('logs')}>
-              Fetch logs
-            </button>
+            <button disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('start')}>▶ Start</button>
+            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('stop')}>■ Stop</button>
+            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('restart')}>↺ Restart</button>
+            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('logs')}>📋 Logs</button>
+            <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleUpdate()}>↑ Update</button>
           </div>
           <pre className="output">{logText || 'Lifecycle output will appear here.'}</pre>
         </section>
 
+        <div className="sectionLabel">§ TERMINAL</div>
         <section className="panel terminalPanel">
           <div className="panelHeader">
-            <div>
-              <p className="eyebrow">Interactive UI</p>
-              <h2>Embedded onboarding terminal</h2>
-            </div>
+            <h2>Embedded terminal</h2>
             {terminalId ? (
               <button
                 className="ghost"
@@ -604,7 +646,7 @@ export default function App() {
                   })
                 }
               >
-                Close terminal
+                ✕ Close
               </button>
             ) : null}
           </div>

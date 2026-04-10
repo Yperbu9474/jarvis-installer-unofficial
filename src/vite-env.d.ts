@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, InstallState, SystemSummary } from './lib/types';
+import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, InstallState, SystemSummary, UpdateResult } from './lib/types';
 
 declare global {
   interface Window {
@@ -10,6 +10,7 @@ declare global {
       detectState: (profile: InstallProfile) => Promise<InstallState>;
       saveProfile: (profile: InstallProfile) => Promise<InstallProfile>;
       install: (profile: InstallProfile) => Promise<InstallResult>;
+      update: (profile: InstallProfile) => Promise<UpdateResult>;
       lifecycle: (profile: InstallProfile, action: LifecycleAction) => Promise<LifecycleResult>;
       openDashboard: (url: string) => Promise<void>;
       terminalCreate: (payload: { profile: InstallProfile; purpose: 'onboard' | 'shell' }) => Promise<{ id: string }>;

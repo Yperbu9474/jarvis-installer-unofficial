@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('jarvisApi', {
   detectState: (profile: unknown) => ipcRenderer.invoke('jarvis:detectState', profile),
   saveProfile: (profile: unknown) => ipcRenderer.invoke('jarvis:saveProfile', profile),
   install: (profile: unknown) => ipcRenderer.invoke('jarvis:install', profile),
+  update: (profile: unknown) => ipcRenderer.invoke('jarvis:update', profile),
   lifecycle: (profile: unknown, action: string) => ipcRenderer.invoke('jarvis:lifecycle', { profile, action }),
   openDashboard: (url: string) => ipcRenderer.invoke('jarvis:openDashboard', url),
   terminalCreate: (payload: unknown) => ipcRenderer.invoke('terminal:create', payload),

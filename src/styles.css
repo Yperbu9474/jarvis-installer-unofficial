@@ -1,297 +1,534 @@
+/* ── Jarvis Installer – Redesigned UI ──────────────────────────── */
 :root {
   color-scheme: dark;
-  --bg: #09111e;
-  --panel: rgba(10, 24, 42, 0.84);
-  --panel-strong: rgba(8, 19, 35, 0.95);
-  --line: rgba(165, 196, 255, 0.12);
-  --text: #e8f0fa;
-  --muted: #97abc7;
+  --bg: #07111f;
+  --panel: #0c1829;
+  --panel-strong: #060e1a;
+  --line: rgba(148, 180, 230, 0.1);
+  --line-strong: rgba(148, 180, 230, 0.18);
+  --text: #dde8f8;
+  --muted: #7a94b8;
   --accent: #f4b860;
-  --accent-strong: #f08a24;
-  --good: #5ed39d;
+  --accent-strong: #e8a044;
+  --cyan: #4fc3f7;
+  --good: #52c987;
   --warn: #f0c15c;
-  --danger: #ff7a7a;
+  --danger: #f07070;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body,
-#root {
+html, body, #root {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(240, 138, 36, 0.18), transparent 26%),
-    radial-gradient(circle at bottom right, rgba(61, 140, 255, 0.16), transparent 22%),
-    linear-gradient(135deg, #060d16, #0b1422 58%, #09111e);
+  background: var(--bg);
   color: var(--text);
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-
-.shell {
-  display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 24px;
-  min-height: 100vh;
-  padding: 24px;
-}
-
-.sidebar,
-.panel {
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  background: var(--panel);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.28);
-}
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 28px;
-}
-
-.main {
-  display: grid;
-  gap: 24px;
-}
-
-.panel {
-  padding: 26px;
-}
-
-.card {
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--line);
-}
-
-.accent {
-  background: linear-gradient(180deg, rgba(240, 138, 36, 0.16), rgba(255, 255, 255, 0.04));
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.72rem;
-  color: var(--accent);
-}
-
-h1,
-h2 {
-  margin: 0 0 10px;
-  font-family: "Space Grotesk", "Segoe UI", sans-serif;
-}
-
-.lede,
-.card p,
-.panel p {
-  margin: 0;
-  color: var(--muted);
+  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
   line-height: 1.5;
 }
 
-.grid {
+button, input, select { font: inherit; }
+
+/* ── Shell 2-column layout ──────────────────────────────────── */
+.shell {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 18px;
+  grid-template-columns: 300px 1fr;
+  gap: 0;
+  min-height: 100vh;
 }
 
-.modeStrip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.modeCard {
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.sidebar {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  border-radius: 18px;
-  padding: 16px;
-  text-align: left;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--line);
-  color: var(--text);
+  gap: 20px;
+  padding: 24px 20px;
+  background: var(--panel);
+  border-right: 1px solid var(--line-strong);
+  overflow-y: auto;
 }
 
-.modeCard span {
+.sidebarLogo { margin-bottom: 4px; }
+
+.sidebarLogo h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  line-height: 1.3;
+}
+
+.logoEyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
   color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.logoSub {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 0;
   line-height: 1.4;
 }
 
-.modeCard.selected {
-  border-color: rgba(244, 184, 96, 0.6);
-  background: linear-gradient(180deg, rgba(244, 184, 96, 0.18), rgba(255, 255, 255, 0.03));
+.sidebarCard {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
 }
 
-label {
+.sidebarCard.accentCard {
+  border-color: rgba(244, 184, 96, 0.2);
+}
+
+.cardEyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.sysLine {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.envPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.envPill {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.envPill.good {
+  background: rgba(82, 201, 135, 0.12);
+  color: var(--good);
+  border: 1px solid rgba(82, 201, 135, 0.25);
+}
+
+.envPill.warn {
+  background: rgba(240, 193, 92, 0.12);
+  color: var(--warn);
+  border: 1px solid rgba(240, 193, 92, 0.25);
+}
+
+.envPill.neutral {
+  background: rgba(122, 148, 184, 0.1);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.wslNote {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+/* Status indicator (sidebar + daemon) */
+.statusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusDot.good {
+  background: var(--good);
+  box-shadow: 0 0 6px var(--good);
+}
+
+.statusDot.warn {
+  background: var(--warn);
+  box-shadow: 0 0 4px rgba(240, 193, 92, 0.4);
+}
+
+.statusDot.off {
+  background: var(--muted);
+}
+
+.statusText {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.activityText {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.noteItem {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.noteItem.muted { color: rgba(122, 148, 184, 0.5); }
+
+.noticeList {
+  display: grid;
+  gap: 8px;
+}
+
+/* ── Main column ─────────────────────────────────────────────── */
+.main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  color: var(--muted);
+  padding: 24px;
+  overflow-y: auto;
 }
 
-input,
-select {
+.sectionLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin: 16px 0 8px;
+  padding: 0 2px;
+  font-weight: 600;
+}
+
+.sectionLabel:first-child { margin-top: 0; }
+
+/* ── Panel ───────────────────────────────────────────────────── */
+.panel {
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(7, 17, 31, 0.92);
-  color: var(--text);
-  padding: 14px 16px;
+  border-radius: 8px;
+  border-top: 2px solid var(--line-strong);
+  padding: 20px;
 }
 
-.checkbox {
-  flex-direction: row;
-  align-items: center;
-  padding-top: 28px;
-}
-
-.buttonRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 20px;
-}
-
-button {
-  border: none;
-  border-radius: 999px;
-  padding: 12px 18px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  color: #08111d;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-button.ghost {
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text);
-  border: 1px solid var(--line);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.panel p { margin: 0; }
 
 .panelHeader {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
-  align-items: flex-start;
+  margin-bottom: 16px;
+  align-items: center;
 }
 
-.badgeRow {
+.panelHeader h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Mode strip (segmented control) ──────────────────────────── */
+.modeStrip {
   display: flex;
-  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+.modeCard {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-right: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  text-align: center;
+}
+
+.modeCard:last-child { border-right: none; }
+
+.modeCard:hover:not(:disabled):not(.selected) {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.modeCard.selected {
+  background: rgba(244, 184, 96, 0.1);
+  color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.modeCard:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* ── Config grid ─────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+input, select {
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input:focus, select:focus {
+  border-color: var(--cyan);
+}
+
+.checkbox {
+  flex-direction: row;
+  align-items: center;
+  padding-top: 20px;
   gap: 8px;
 }
 
+.checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+button {
+  border: none;
+  border-radius: 6px;
+  padding: 9px 16px;
+  background: var(--accent);
+  color: #07111f;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  position: relative;
+  transition: background 0.15s;
+}
+
+button:hover:not(:disabled) { background: var(--accent-strong); }
+
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+}
+
+button.ghost:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+button:disabled {
+  background: rgba(100, 110, 130, 0.2);
+  color: rgba(130, 145, 170, 0.4);
+  cursor: not-allowed;
+  border-color: transparent;
+}
+
+button.ghost:disabled {
+  background: transparent;
+  color: rgba(130, 145, 170, 0.3);
+  border-color: rgba(100, 110, 130, 0.15);
+}
+
+/* Busy spinner on primary button */
+button.busy::after {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 8px;
+  border: 2px solid rgba(7, 17, 31, 0.4);
+  border-top-color: #07111f;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* ── Badges ──────────────────────────────────────────────────── */
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
 .badge {
-  padding: 6px 10px;
-  border-radius: 999px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: rgba(122, 148, 184, 0.1);
+  color: var(--muted);
   border: 1px solid var(--line);
-  font-size: 0.82rem;
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .badge.good {
-  border-color: rgba(94, 211, 157, 0.35);
+  background: rgba(82, 201, 135, 0.12);
   color: var(--good);
+  border: 1px solid rgba(82, 201, 135, 0.25);
 }
 
 .badge.warn {
-  border-color: rgba(240, 193, 92, 0.35);
+  background: rgba(240, 193, 92, 0.12);
   color: var(--warn);
+  border: 1px solid rgba(240, 193, 92, 0.25);
 }
 
 .badge.neutral {
+  background: rgba(122, 148, 184, 0.1);
   color: var(--muted);
-}
-
-.noticeList {
-  display: grid;
-  gap: 10px;
-}
-
-.callout,
-.errorBox,
-.successBox {
-  margin-top: 18px;
-  padding: 16px 18px;
-  border-radius: 18px;
   border: 1px solid var(--line);
 }
 
-.callout {
-  background: rgba(255, 255, 255, 0.03);
+/* ── Daemon status (prominent) ───────────────────────────────── */
+.daemonStatus {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
 }
 
-.errorBox {
-  background: rgba(255, 122, 122, 0.08);
-  border-color: rgba(255, 122, 122, 0.3);
-}
-
-.successBox {
-  background: rgba(94, 211, 157, 0.08);
-  border-color: rgba(94, 211, 157, 0.3);
-}
-
-.errorBox strong,
-.successBox strong,
-.callout strong {
-  display: block;
-  margin-bottom: 6px;
-}
-
-.errorBox ul {
-  margin: 8px 0 0 20px;
+.daemonStatusText {
+  font-size: 18px;
+  font-weight: 700;
   color: var(--text);
 }
 
-.output {
-  min-height: 220px;
-  margin: 18px 0 0;
-  padding: 18px;
-  overflow: auto;
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: var(--panel-strong);
-  color: #d4e1f5;
-  font-family: "JetBrains Mono", monospace;
-  white-space: pre-wrap;
+/* ── Callout / Error / Success ───────────────────────────────── */
+.callout, .errorBox, .successBox {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 6px;
 }
 
+.callout {
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 3px solid var(--muted);
+}
+
+.errorBox {
+  border-left: 3px solid var(--danger);
+  background: rgba(240, 112, 112, 0.06);
+}
+
+.successBox {
+  border-left: 3px solid var(--good);
+  background: rgba(82, 201, 135, 0.06);
+}
+
+.errorBox strong, .successBox strong, .callout strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.callout p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.errorBox ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* ── Output / logs ───────────────────────────────────────────── */
+.output {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  min-height: 180px;
+  overflow: auto;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: #b8d0f0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/* ── Terminal ────────────────────────────────────────────────── */
 .terminalPanel {
-  min-height: 320px;
+  min-height: 340px;
 }
 
 .terminalMount {
-  min-height: 300px;
-  border-radius: 18px;
+  border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--line);
+  min-height: 300px;
 }
 
-@media (max-width: 1100px) {
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 1000px) {
   .shell {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--line-strong);
   }
 
   .grid {
@@ -299,6 +536,13 @@ button:disabled {
   }
 
   .modeStrip {
-    grid-template-columns: 1fr;
+    flex-direction: column;
   }
+
+  .modeCard {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .modeCard:last-child { border-bottom: none; }
 }
