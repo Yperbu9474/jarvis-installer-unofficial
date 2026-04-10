@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import type { InstallMode, InstallProfile, InstallState, LifecycleAction, SystemSummary } from './lib/types';
+import type { InstallMode, InstallProfile, InstallState, LifecycleAction, SystemSummary, ProxyConfig, ProxyResult } from './lib/types';
 
 const defaultProfile: InstallProfile = {
   mode: 'native',
@@ -191,6 +191,16 @@ export default function App() {
   const fitRef = useRef<FitAddon | null>(null);
   // Ref so stale closures inside xterm callbacks can always read the live terminalId
   const terminalIdRef = useRef<string | null>(null);
+  const [proxyConfig, setProxyConfig] = useState<ProxyConfig>({
+    domain: '',
+    cfApiToken: '',
+    cfZoneId: '',
+    email: '',
+    vpsIp: '',
+    port: profile?.port ?? 3000,
+  });
+  const [proxyRunning, setProxyRunning] = useState(false);
+  const [proxyResult, setProxyResult] = useState<ProxyResult | null>(null);
 
   useEffect(() => {
     terminalIdRef.current = terminalId;
@@ -417,6 +427,20 @@ export default function App() {
       }
     }, 50);
   }
+
+  const handleSetupProxy = async () => {
+    setProxyRunning(true);
+    setProxyResult(null);
+    const result = await window.jarvisApi.setupProxy(proxyConfig);
+    setProxyResult(result);
+    setProxyRunning(false);
+  };
+
+  const autoDetectIp = async () => {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const data = await res.json();
+    setProxyConfig({ ...proxyConfig, vpsIp: data.ip });
+  };
 
   return (
     <div className="shell">
@@ -651,6 +675,52 @@ export default function App() {
             ) : null}
           </div>
           <div className="terminalMount" ref={terminalMount} />
+        </section>
+
+        <div className="sectionLabel">§ REVERSE PROXY</div>
+        <section className="proxy-section panel">
+          <h2>Reverse Proxy</h2>
+          <p className="section-desc">Auto-configure Cloudflare DNS + nginx + SSL for your VPS. Linux only.</p>
+          <div className="proxy-form">
+            <div className="form-row">
+              <label>Domain / Subdomain</label>
+              <input type="text" placeholder="jarvis.yourdomain.com" value={proxyConfig.domain} onChange={e => setProxyConfig({...proxyConfig, domain: e.target.value})} />
+            </div>
+            <div className="form-row">
+              <label>Cloudflare API Token</label>
+              <input type="password" placeholder="CF API token with DNS:Edit" value={proxyConfig.cfApiToken} onChange={e => setProxyConfig({...proxyConfig, cfApiToken: e.target.value})} />
+            </div>
+            <div className="form-row">
+              <label>Cloudflare Zone ID</label>
+              <input type="text" placeholder="Zone ID from CF dashboard" value={proxyConfig.cfZoneId} onChange={e => setProxyConfig({...proxyConfig, cfZoneId: e.target.value})} />
+            </div>
+            <div className="form-row">
+              <label>SSL Email</label>
+              <input type="email" placeholder="you@example.com" value={proxyConfig.email} onChange={e => setProxyConfig({...proxyConfig, email: e.target.value})} />
+            </div>
+            <div className="form-row">
+              <label>VPS Public IP</label>
+              <div className="input-with-btn">
+                <input type="text" placeholder="1.2.3.4" value={proxyConfig.vpsIp} onChange={e => setProxyConfig({...proxyConfig, vpsIp: e.target.value})} />
+                <button className="btn-inline" onClick={autoDetectIp}>Auto-detect</button>
+              </div>
+            </div>
+            <div className="form-row">
+              <label>Jarvis Port</label>
+              <input type="number" value={proxyConfig.port} onChange={e => setProxyConfig({...proxyConfig, port: Number(e.target.value)})} />
+            </div>
+          </div>
+          <button className="btn-primary" onClick={handleSetupProxy} disabled={proxyRunning}>
+            {proxyRunning ? <><span className="spinner" /> Setting up…</> : '🔒 Setup Reverse Proxy'}
+          </button>
+          {proxyResult && (
+            <div className={`proxy-result ${proxyResult.ok ? 'success' : 'error'}`}>
+              <pre className="output-log">{proxyResult.output}</pre>
+              {proxyResult.ok && proxyResult.url && (
+                <p className="proxy-url">✅ Live at: <a href={proxyResult.url} target="_blank" rel="noreferrer">{proxyResult.url}</a></p>
+              )}
+            </div>
+          )}
         </section>
       </main>
     </div>

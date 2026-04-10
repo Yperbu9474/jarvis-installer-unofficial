@@ -546,3 +546,23 @@ button.busy::after {
 
   .modeCard:last-child { border-bottom: none; }
 }
+
+/* ── Reverse Proxy Section ── */
+.proxy-section { margin-top: 2rem; }
+.proxy-section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; }
+.section-desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 1rem; }
+.proxy-form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1rem; }
+.form-row { display: flex; flex-direction: column; gap: 0.25rem; }
+.form-row label { font-size: 0.75rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.form-row input { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; padding: 0.45rem 0.6rem; outline: none; width: 100%; box-sizing: border-box; }
+.form-row input:focus { border-color: var(--accent); }
+.input-with-btn { display: flex; gap: 0.4rem; }
+.input-with-btn input { flex: 1; }
+.btn-inline { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; font-size: 0.75rem; padding: 0.4rem 0.7rem; white-space: nowrap; }
+.btn-inline:hover { border-color: var(--accent); color: var(--accent); }
+.proxy-result { margin-top: 1rem; }
+.proxy-result.success .output-log { border-color: #22c55e44; }
+.proxy-result.error .output-log { border-color: #ef444444; color: #ef4444; }
+.proxy-url { font-size: 0.85rem; margin-top: 0.5rem; }
+.proxy-url a { color: var(--accent); text-decoration: none; }
+.proxy-url a:hover { text-decoration: underline; }

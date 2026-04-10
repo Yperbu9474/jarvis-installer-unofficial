@@ -19,4 +19,5 @@ contextBridge.exposeInMainWorld('jarvisApi', {
     ipcRenderer.on('terminal:data', wrapped);
     return () => ipcRenderer.off('terminal:data', wrapped);
   },
+  setupProxy: (config: unknown) => ipcRenderer.invoke('jarvis:setupProxy', config),
 });

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, InstallState, SystemSummary, UpdateResult } from './lib/types';
+import type { InstallProfile, InstallResult, LifecycleAction, LifecycleResult, InstallState, SystemSummary, UpdateResult, ProxyConfig, ProxyResult } from './lib/types';
 
 declare global {
   interface Window {
@@ -18,6 +18,7 @@ declare global {
       terminalResize: (id: string, cols: number, rows: number) => Promise<{ ok: true }>;
       terminalClose: (id: string) => Promise<{ ok: true }>;
       onTerminalData: (listener: (payload: { id: string; data: string }) => void) => () => void;
+      setupProxy: (config: ProxyConfig) => Promise<ProxyResult>;
     };
   }
 }

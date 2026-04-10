@@ -17,6 +17,7 @@ import {
   saveProfile,
   updateJarvis,
 } from './src/jarvis';
+import { setupProxy } from './src/proxy';
 
 log.initialize();
 
@@ -65,6 +66,7 @@ ipcMain.handle('jarvis:install', async (_event, profile) => installJarvis(profil
 ipcMain.handle('jarvis:update', async (_event, profile) => updateJarvis(profile));
 ipcMain.handle('jarvis:lifecycle', async (_event, payload) => runLifecycleAction(payload.profile, payload.action));
 ipcMain.handle('jarvis:openDashboard', async (_event, url) => shell.openExternal(url));
+ipcMain.handle('jarvis:setupProxy', (_e, config) => setupProxy(config));
 
 ipcMain.handle('terminal:create', async (_event, payload) => {
   const id = createTerminal(payload, (data) => {

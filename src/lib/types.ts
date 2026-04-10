@@ -50,3 +50,18 @@ export type InstallState = {
   details: string;
   dashboardUrl: string;
 };
+
+export type ProxyConfig = {
+  domain: string;
+  cfApiToken: string;
+  cfZoneId: string;
+  email: string;
+  vpsIp: string;
+  port: number;
+};
+
+export type ProxyResult = {
+  ok: boolean;
+  output: string;
+  url?: string;
+};
