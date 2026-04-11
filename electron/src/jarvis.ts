@@ -466,6 +466,10 @@ function Ensure-WslJarvisUser([string]$WslCommand, [string]$DistroName) {
     $existingUser = 'jarvis'
   }
 
+  if ($existingUser -notmatch '^[a-z_][a-z0-9_-]*[$]?$') {
+    throw "WSL username '$existingUser' contains unsupported characters for non-interactive setup."
+  }
+
   Write-Host "JARVIS_PROGRESS:55:Preparing Linux user $existingUser"
 
   $bootstrap = @'
@@ -487,7 +491,7 @@ WSL_USER_EOF
 sed -i "s/TARGET_USER_PLACEHOLDER/$TARGET_USER/" /etc/wsl.conf
 '@
 
-  $bootstrapCommand = 'export TARGET_USER=' + [System.Management.Automation.Language.CodeGeneration]::QuoteArgument($existingUser) + '; ' + $bootstrap
+  $bootstrapCommand = 'export TARGET_USER=' + $existingUser + '; ' + $bootstrap
   & $WslCommand -d $DistroName -u root -- bash -lc $bootstrapCommand
   if ($LASTEXITCODE -ne 0) {
     throw 'Failed to prepare a Linux user for Jarvis inside WSL.'
@@ -646,6 +650,14 @@ function createInstallProgressParser(
   };
 }
 
+function stripProgressMarkers(output: string): string {
+  return output
+    .split(/\r?\n/)
+    .filter((line) => !/^JARVIS_PROGRESS:\d{1,3}:/.test(line))
+    .join('\n')
+    .trim();
+}
+
 export async function installJarvis(
   profile: InstallProfile,
   notifyProgress?: (progress: InstallProgress) => void,
@@ -684,7 +696,7 @@ export async function installJarvis(
   }
   return {
     ok: result.ok,
-    output: `${result.stdout}${result.stderr}`.trim(),
+    output: stripProgressMarkers(`${result.stdout}${result.stderr}`),
     dashboardUrl: `http://localhost:${normalizePort(profile.port)}`,
   };
 }
