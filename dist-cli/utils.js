@@ -113,12 +113,22 @@ async function hasCommand(command) {
 function shellPrefix(host) {
     return host ? `DOCKER_HOST=${shellEscape(host)} ` : '';
 }
+function sudoPrefix() {
+    return 'sudo -n';
+}
+async function ensureSudoReady() {
+    const nonInteractive = await run(`${sudoPrefix()} true 2>/dev/null`);
+    if (nonInteractive.ok) {
+        return true;
+    }
+    return runLive('sudo -v');
+}
 function buildDockerCommand(binary, host, useSudo = false) {
     const escapedBinary = shellEscape(binary);
     if (useSudo) {
         return host
-            ? `sudo env DOCKER_HOST=${shellEscape(host)} ${escapedBinary}`
-            : `sudo ${escapedBinary}`;
+            ? `${sudoPrefix()} env DOCKER_HOST=${shellEscape(host)} ${escapedBinary}`
+            : `${sudoPrefix()} ${escapedBinary}`;
     }
     return `${shellPrefix(host)}${escapedBinary}`;
 }
@@ -157,13 +167,17 @@ async function ensureDockerInstalled() {
             error('Docker is required but this Linux distro is not supported for automatic installation. Please install Docker manually and rerun `jarv install`.');
             process.exit(1);
         }
-        const installed = await runLive('sudo apt-get update -y && sudo apt-get install -y docker.io');
+        if (!(await ensureSudoReady())) {
+            error('Docker is required, but sudo privileges could not be acquired for automatic installation.');
+            process.exit(1);
+        }
+        const installed = await runLive(`${sudoPrefix()} apt-get update -y && ${sudoPrefix()} apt-get install -y docker.io`);
         if (!installed) {
             error('Failed to install Docker with apt-get.');
             process.exit(1);
         }
         if (await hasCommand('systemctl')) {
-            const started = await runLive('sudo systemctl enable --now docker');
+            const started = await runLive(`${sudoPrefix()} systemctl enable --now docker`);
             if (!started) {
                 warn('Docker was installed, but the Docker service could not be started automatically.');
             }
@@ -235,7 +249,9 @@ async function getDockerCommand() {
     }
     if (process.platform === 'linux' && await hasCommand('systemctl')) {
         log('Starting Docker service...');
-        await runLive('sudo systemctl enable --now docker');
+        if (await ensureSudoReady()) {
+            await runLive(`${sudoPrefix()} systemctl enable --now docker`);
+        }
         for (const host of hosts) {
             const command = buildDockerCommand(dockerBinary, host || undefined);
             if (await waitForDockerReady(command)) {
@@ -245,7 +261,7 @@ async function getDockerCommand() {
     }
     if (permissionDeniedCommands.length) {
         warn('Docker requires elevated privileges in this shell. Using sudo for Docker commands.');
-        const sudoReady = await runLive('sudo -v');
+        const sudoReady = await ensureSudoReady();
         if (!sudoReady) {
             error('Unable to acquire sudo privileges for Docker commands.');
             process.exit(1);

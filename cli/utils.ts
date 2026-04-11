@@ -76,12 +76,25 @@ function shellPrefix(host?: string): string {
   return host ? `DOCKER_HOST=${shellEscape(host)} ` : '';
 }
 
+function sudoPrefix(): string {
+  return 'sudo -n';
+}
+
+async function ensureSudoReady(): Promise<boolean> {
+  const nonInteractive = await run(`${sudoPrefix()} true 2>/dev/null`);
+  if (nonInteractive.ok) {
+    return true;
+  }
+
+  return runLive('sudo -v');
+}
+
 function buildDockerCommand(binary: string, host?: string, useSudo = false): string {
   const escapedBinary = shellEscape(binary);
   if (useSudo) {
     return host
-      ? `sudo env DOCKER_HOST=${shellEscape(host)} ${escapedBinary}`
-      : `sudo ${escapedBinary}`;
+      ? `${sudoPrefix()} env DOCKER_HOST=${shellEscape(host)} ${escapedBinary}`
+      : `${sudoPrefix()} ${escapedBinary}`;
   }
 
   return `${shellPrefix(host)}${escapedBinary}`;
@@ -130,14 +143,19 @@ async function ensureDockerInstalled(): Promise<void> {
       process.exit(1);
     }
 
-    const installed = await runLive('sudo apt-get update -y && sudo apt-get install -y docker.io');
+    if (!(await ensureSudoReady())) {
+      error('Docker is required, but sudo privileges could not be acquired for automatic installation.');
+      process.exit(1);
+    }
+
+    const installed = await runLive(`${sudoPrefix()} apt-get update -y && ${sudoPrefix()} apt-get install -y docker.io`);
     if (!installed) {
       error('Failed to install Docker with apt-get.');
       process.exit(1);
     }
 
     if (await hasCommand('systemctl')) {
-      const started = await runLive('sudo systemctl enable --now docker');
+      const started = await runLive(`${sudoPrefix()} systemctl enable --now docker`);
       if (!started) {
         warn('Docker was installed, but the Docker service could not be started automatically.');
       }
@@ -221,7 +239,9 @@ export async function getDockerCommand(): Promise<string> {
 
   if (process.platform === 'linux' && await hasCommand('systemctl')) {
     log('Starting Docker service...');
-    await runLive('sudo systemctl enable --now docker');
+    if (await ensureSudoReady()) {
+      await runLive(`${sudoPrefix()} systemctl enable --now docker`);
+    }
 
     for (const host of hosts) {
       const command = buildDockerCommand(dockerBinary, host || undefined);
@@ -233,7 +253,7 @@ export async function getDockerCommand(): Promise<string> {
 
   if (permissionDeniedCommands.length) {
     warn('Docker requires elevated privileges in this shell. Using sudo for Docker commands.');
-    const sudoReady = await runLive('sudo -v');
+    const sudoReady = await ensureSudoReady();
     if (!sudoReady) {
       error('Unable to acquire sudo privileges for Docker commands.');
       process.exit(1);
