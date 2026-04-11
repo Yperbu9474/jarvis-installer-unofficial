@@ -521,12 +521,13 @@ Write-Host "JARVIS_PROGRESS:65:Running Jarvis install inside WSL"
 }
 
 function buildInstallScript(profile: InstallProfile): string {
+  const effectiveMode = os.platform() === 'win32' && profile.mode === 'native' ? 'wsl2' : profile.mode;
   const port = normalizePort(profile.port);
   const repo = profile.jarvisRepo || 'https://github.com/vierisid/jarvis.git';
   const containerName = profile.containerName || 'jarvis-daemon';
-  const dataDir = profile.dataDir || (profile.mode === 'docker' ? '~/.jarvis-docker' : '~/.jarvis');
+  const dataDir = profile.dataDir || (effectiveMode === 'docker' ? '~/.jarvis-docker' : '~/.jarvis');
 
-  if (profile.mode === 'docker') {
+  if (effectiveMode === 'docker') {
     if (os.platform() === 'win32') {
       return `
 ${dockerBootstrapScriptWindows()}
@@ -555,7 +556,7 @@ docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p
 `;
   }
 
-  if (profile.mode === 'wsl2') {
+  if (effectiveMode === 'wsl2') {
     if (os.platform() === 'win32') {
       return wslBootstrapScriptWindows(profile, port, repo);
     }
@@ -668,15 +669,19 @@ export async function installJarvis(
   profile: InstallProfile,
   notifyProgress?: (progress: InstallProgress) => void,
 ): Promise<InstallResult> {
+  const effectiveProfile =
+    os.platform() === 'win32' && profile.mode === 'native'
+      ? { ...profile, mode: 'wsl2' as const }
+      : profile;
   const progress = createInstallProgressParser(notifyProgress);
   const result =
-    os.platform() === 'win32' && profile.mode === 'wsl2'
+    os.platform() === 'win32' && effectiveProfile.mode === 'wsl2'
       ? await execCommand(
         'powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', buildInstallScript(profile)],
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', buildInstallScript(effectiveProfile)],
         { onStdout: progress.onChunk, onStderr: progress.onChunk },
       )
-      : await runProfileCommand(profile, buildInstallScript(profile), {
+      : await runProfileCommand(effectiveProfile, buildInstallScript(effectiveProfile), {
         onStdout: progress.onChunk,
         onStderr: progress.onChunk,
       });
@@ -685,16 +690,16 @@ export async function installJarvis(
   progress.finish(result.ok);
 
   if (result.ok) {
-    let profileToSave = profile;
-    if (os.platform() === 'win32' && profile.mode === 'wsl2') {
+    let profileToSave = effectiveProfile;
+    if (os.platform() === 'win32' && effectiveProfile.mode === 'wsl2') {
       const combinedOutput = `${result.stdout}\n${result.stderr}`;
       const matchedDistro = combinedOutput.match(/JARVIS_WSL_DISTRO=([^\r\n]+)/);
       if (matchedDistro?.[1]?.trim()) {
-        profileToSave = { ...profile, wslDistro: matchedDistro[1].trim() };
-      } else if (!profile.wslDistro) {
+        profileToSave = { ...effectiveProfile, wslDistro: matchedDistro[1].trim() };
+      } else if (!effectiveProfile.wslDistro) {
         const summary = await loadSystemSummary();
         if (summary.wslDistros[0]) {
-          profileToSave = { ...profile, wslDistro: summary.wslDistros[0] };
+          profileToSave = { ...effectiveProfile, wslDistro: summary.wslDistros[0] };
         }
       }
     }
