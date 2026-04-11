@@ -62,6 +62,21 @@ function pwshQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function normalizePort(value: unknown): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 65535) {
+    return value;
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number.parseInt(value, 10);
+    if (parsed >= 1 && parsed <= 65535) {
+      return parsed;
+    }
+  }
+
+  return 3142;
+}
+
 function bunBootstrapScript() {
   return `
 set -euo pipefail
@@ -106,7 +121,7 @@ ${dockerPowerShellPreamble()}
 }
 
 function buildInstallScript(profile: InstallProfile): string {
-  const port = profile.port || 3142;
+  const port = normalizePort(profile.port);
   const repo = profile.jarvisRepo || 'https://github.com/vierisid/jarvis.git';
   const containerName = profile.containerName || 'jarvis-daemon';
   const dataDir = profile.dataDir || (profile.mode === 'docker' ? '~/.jarvis-docker' : '~/.jarvis');
@@ -197,7 +212,7 @@ fi
 }
 
 function buildDockerRunCommand(profile: InstallProfile): string {
-  const port = profile.port || 3142;
+  const port = normalizePort(profile.port);
   const containerName = profile.containerName || 'jarvis-daemon';
   const dataDir = profile.dataDir || '~/.jarvis-docker';
 
@@ -216,7 +231,7 @@ export async function installJarvis(profile: InstallProfile): Promise<InstallRes
   return {
     ok: result.ok,
     output: `${result.stdout}${result.stderr}`.trim(),
-    dashboardUrl: `http://localhost:${profile.port || 3142}`,
+    dashboardUrl: `http://localhost:${normalizePort(profile.port)}`,
   };
 }
 
@@ -237,7 +252,7 @@ function buildUpdateScript(profile: InstallProfile): string {
 ${dockerPowerShellPreamble()}
 $dataDir = ${pwshQuote(profile.dataDir || '~/.jarvis-docker')}
 $containerName = ${pwshQuote(containerName)}
-$port = ${profile.port || 3142}
+$port = ${normalizePort(profile.port)}
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
 try { docker_cmd rm -f $containerName 2>$null | Out-Null } catch { }
 ${buildDockerRunCommand(profile)}

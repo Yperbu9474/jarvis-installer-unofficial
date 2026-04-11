@@ -19,6 +19,21 @@ function sanitizeWslDistro(value?: string): string | undefined {
   return sanitized || undefined;
 }
 
+function normalizePort(value: unknown): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 65535) {
+    return value;
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number.parseInt(value, 10);
+    if (parsed >= 1 && parsed <= 65535) {
+      return parsed;
+    }
+  }
+
+  return 3142;
+}
+
 function parseWslDistros(raw: string): string[] {
   return stripControlNulls(raw)
     .split(/\r?\n/)
@@ -294,7 +309,7 @@ export async function loadSystemSummary(): Promise<SystemSummary> {
 }
 
 export async function lifecycle(profile: InstallProfile, action: LifecycleAction): Promise<LifecycleResult> {
-  const port = profile.port || 3142;
+  const port = normalizePort(profile.port);
   const dashboardUrl = `http://localhost:${port}`;
 
   if (profile.mode === 'docker') {
@@ -302,7 +317,7 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     const quotedName = os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
     const dockerCommand =
       action === 'status'
-        ? `docker_cmd ps -a --filter "name=^${containerName}$" --format "{{.Status}}" || docker_cmd inspect ${quotedName} --format "{{.State.Status}}"`
+        ? `docker_cmd inspect ${quotedName} --format "{{.State.Status}}"`
         : action === 'logs'
           ? `docker_cmd logs --tail 200 ${quotedName}`
           : `docker_cmd ${action} ${quotedName}`;
@@ -332,7 +347,7 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
 }
 
 export async function detectInstallState(profile: InstallProfile): Promise<InstallState> {
-  const dashboardUrl = `http://localhost:${profile.port || 3142}`;
+  const dashboardUrl = `http://localhost:${normalizePort(profile.port)}`;
 
   if (profile.mode === 'docker') {
     const containerName = profile.containerName || 'jarvis-daemon';
