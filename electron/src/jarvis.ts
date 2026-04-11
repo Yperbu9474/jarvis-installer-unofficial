@@ -543,6 +543,7 @@ Write-Host 'JARVIS_PROGRESS:76:Preparing Docker data directory'
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 Write-Host 'JARVIS_PROGRESS:86:Pulling Jarvis container image'
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
+${buildDockerDataPrepCommand(profile)}
 try { docker_cmd rm -f $containerName 2>$null | Out-Null } catch { }
 Write-Host 'JARVIS_PROGRESS:96:Starting Jarvis container'
 docker_cmd run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest
@@ -555,6 +556,7 @@ echo "JARVIS_PROGRESS:72:Preparing Docker data directory"
 mkdir -p ${bashQuote(dataDir)}
 echo "JARVIS_PROGRESS:86:Pulling Jarvis container image"
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
+${buildDockerDataPrepCommand(profile)}
 docker_cmd rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
 echo "JARVIS_PROGRESS:96:Starting Jarvis container"
 docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest
@@ -592,6 +594,17 @@ function buildDockerRunCommand(profile: InstallProfile): string {
   }
 
   return `docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`;
+}
+
+function buildDockerDataPrepCommand(profile: InstallProfile): string {
+  const dataDir = profile.dataDir || '~/.jarvis-docker';
+  const prepareScript = 'mkdir -p /data && chown -R 999:999 /data';
+
+  if (os.platform() === 'win32') {
+    return `docker_cmd run --rm --user 0:0 -v "${dataDir}:/data" --entrypoint sh ghcr.io/vierisid/jarvis:latest -lc ${pwshQuote(prepareScript)}`;
+  }
+
+  return `docker_cmd run --rm --user 0:0 -v ${bashQuote(dataDir)}:/data --entrypoint sh ghcr.io/vierisid/jarvis:latest -lc ${bashQuote(prepareScript)}`;
 }
 
 function createInstallProgressParser(
@@ -717,6 +730,7 @@ $dataDir = ${pwshQuote(profile.dataDir || '~/.jarvis-docker')}
 $containerName = ${pwshQuote(containerName)}
 $port = ${normalizePort(profile.port)}
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
+${buildDockerDataPrepCommand(profile)}
 try { docker_cmd rm -f $containerName 2>$null | Out-Null } catch { }
 ${buildDockerRunCommand(profile)}
 `;
@@ -724,6 +738,7 @@ ${buildDockerRunCommand(profile)}
     return `
 ${dockerShellPreamble()}
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
+${buildDockerDataPrepCommand(profile)}
 docker_cmd rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
 ${buildDockerRunCommand(profile)}
 `;

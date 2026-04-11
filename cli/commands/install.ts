@@ -83,20 +83,28 @@ export async function runInstall(args: string[]): Promise<void> {
     return;
   }
 
-  const TOTAL = mode === 'docker' ? 4 : 5;
+  const TOTAL = 5;
 
   if (mode === 'docker') {
     step(1, TOTAL, 'Checking Docker...');
     const dockerCommand = await getDockerCommand();
+    const prepareDataDirCommand =
+      `${dockerCommand} run --rm --user 0:0 -v ${shellEscape(dataDir)}:/data ` +
+      `--entrypoint sh ghcr.io/vierisid/jarvis:latest -lc ${shellEscape('mkdir -p /data && chown -R 999:999 /data')}`;
 
     step(2, TOTAL, 'Pulling Jarvis Docker image...');
     const pull = await runLive(`${dockerCommand} pull ghcr.io/vierisid/jarvis:latest`);
     if (!pull) { error('Failed to pull Docker image.'); process.exit(1); }
 
-    step(3, TOTAL, 'Removing existing container (if any)...');
+    step(3, TOTAL, `Preparing data directory ${dataDir}...`);
+    fs.mkdirSync(dataDir, { recursive: true });
+    const prepared = await runLive(prepareDataDirCommand);
+    if (!prepared) { error('Failed to prepare Docker data directory permissions.'); process.exit(1); }
+
+    step(4, TOTAL, 'Removing existing container (if any)...');
     await run(`${dockerCommand} rm -f ${shellEscape(containerName)} 2>/dev/null || true`);
 
-    step(4, TOTAL, `Starting container on port ${port}...`);
+    step(5, TOTAL, `Starting container on port ${port}...`);
     const started = await runLive(
       `${dockerCommand} run -d --name ${shellEscape(containerName)} -p ${port}:3142 -v ${shellEscape(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`
     );

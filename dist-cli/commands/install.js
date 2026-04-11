@@ -94,19 +94,28 @@ async function runInstall(args) {
         (0, utils_1.warn)('Installation cancelled.');
         return;
     }
-    const TOTAL = mode === 'docker' ? 4 : 5;
+    const TOTAL = 5;
     if (mode === 'docker') {
         (0, utils_1.step)(1, TOTAL, 'Checking Docker...');
         const dockerCommand = await (0, utils_1.getDockerCommand)();
+        const prepareDataDirCommand = `${dockerCommand} run --rm --user 0:0 -v ${(0, utils_1.shellEscape)(dataDir)}:/data ` +
+            `--entrypoint sh ghcr.io/vierisid/jarvis:latest -lc ${(0, utils_1.shellEscape)('mkdir -p /data && chown -R 999:999 /data')}`;
         (0, utils_1.step)(2, TOTAL, 'Pulling Jarvis Docker image...');
         const pull = await (0, utils_1.runLive)(`${dockerCommand} pull ghcr.io/vierisid/jarvis:latest`);
         if (!pull) {
             (0, utils_1.error)('Failed to pull Docker image.');
             process.exit(1);
         }
-        (0, utils_1.step)(3, TOTAL, 'Removing existing container (if any)...');
+        (0, utils_1.step)(3, TOTAL, `Preparing data directory ${dataDir}...`);
+        fs.mkdirSync(dataDir, { recursive: true });
+        const prepared = await (0, utils_1.runLive)(prepareDataDirCommand);
+        if (!prepared) {
+            (0, utils_1.error)('Failed to prepare Docker data directory permissions.');
+            process.exit(1);
+        }
+        (0, utils_1.step)(4, TOTAL, 'Removing existing container (if any)...');
         await (0, utils_1.run)(`${dockerCommand} rm -f ${(0, utils_1.shellEscape)(containerName)} 2>/dev/null || true`);
-        (0, utils_1.step)(4, TOTAL, `Starting container on port ${port}...`);
+        (0, utils_1.step)(5, TOTAL, `Starting container on port ${port}...`);
         const started = await (0, utils_1.runLive)(`${dockerCommand} run -d --name ${(0, utils_1.shellEscape)(containerName)} -p ${port}:3142 -v ${(0, utils_1.shellEscape)(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`);
         if (!started) {
             (0, utils_1.error)('Failed to start container.');
