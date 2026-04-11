@@ -98,7 +98,7 @@ export async function runInstall(args: string[]): Promise<void> {
 
     step(4, TOTAL, `Starting container on port ${port}...`);
     const started = await runLive(
-      `${dockerCommand} run -d --name ${shellEscape(containerName)} -p ${port}:3142 -v ${shellEscape(dataDir)}:/app/data ghcr.io/vierisid/jarvis:latest`
+      `${dockerCommand} run -d --name ${shellEscape(containerName)} -p ${port}:3142 -v ${shellEscape(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`
     );
     if (!started) { error('Failed to start container.'); process.exit(1); }
   } else {

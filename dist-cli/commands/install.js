@@ -107,7 +107,7 @@ async function runInstall(args) {
         (0, utils_1.step)(3, TOTAL, 'Removing existing container (if any)...');
         await (0, utils_1.run)(`${dockerCommand} rm -f ${(0, utils_1.shellEscape)(containerName)} 2>/dev/null || true`);
         (0, utils_1.step)(4, TOTAL, `Starting container on port ${port}...`);
-        const started = await (0, utils_1.runLive)(`${dockerCommand} run -d --name ${(0, utils_1.shellEscape)(containerName)} -p ${port}:3142 -v ${(0, utils_1.shellEscape)(dataDir)}:/app/data ghcr.io/vierisid/jarvis:latest`);
+        const started = await (0, utils_1.runLive)(`${dockerCommand} run -d --name ${(0, utils_1.shellEscape)(containerName)} -p ${port}:3142 -v ${(0, utils_1.shellEscape)(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`);
         if (!started) {
             (0, utils_1.error)('Failed to start container.');
             process.exit(1);

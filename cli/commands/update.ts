@@ -7,7 +7,7 @@ export async function runUpdate(_args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const { mode, containerName = 'jarvis-daemon' } = profile;
+  const { mode, containerName = 'jarvis-daemon', port = 3142, dataDir = '~/.jarvis-docker' } = profile;
 
   if (mode === 'docker') {
     const dockerCommand = await getDockerCommand();
@@ -16,9 +16,12 @@ export async function runUpdate(_args: string[]): Promise<void> {
     const pull = await runLive(`${dockerCommand} pull ghcr.io/vierisid/jarvis:latest`);
     if (!pull) { error('Failed to pull latest image.'); process.exit(1); }
 
-    log(`Restarting container ${containerName}...`);
-    const restart = await runLive(`${dockerCommand} restart ${shellEscape(containerName)}`);
-    if (!restart) { error('Failed to restart container.'); process.exit(1); }
+    log(`Recreating container ${containerName} with the latest image...`);
+    const restart = await runLive(
+      `${dockerCommand} rm -f ${shellEscape(containerName)} >/dev/null 2>&1 || true && ` +
+      `${dockerCommand} run -d --name ${shellEscape(containerName)} -p ${port}:3142 -v ${shellEscape(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`
+    );
+    if (!restart) { error('Failed to recreate container with the latest image.'); process.exit(1); }
 
     ok('Jarvis updated and restarted successfully!');
   } else {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { log, error, c } from './utils';
 
-const VERSION = '1.2.2';
+const VERSION = '1.2.3';
 
 function printHelp(): void {
   console.log(`

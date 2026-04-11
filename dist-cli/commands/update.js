@@ -8,7 +8,7 @@ async function runUpdate(_args) {
         (0, utils_1.error)('No Jarvis profile found. Run `jarv install` first.');
         process.exit(1);
     }
-    const { mode, containerName = 'jarvis-daemon' } = profile;
+    const { mode, containerName = 'jarvis-daemon', port = 3142, dataDir = '~/.jarvis-docker' } = profile;
     if (mode === 'docker') {
         const dockerCommand = await (0, utils_1.getDockerCommand)();
         (0, utils_1.log)('Pulling latest Jarvis Docker image...');
@@ -17,10 +17,11 @@ async function runUpdate(_args) {
             (0, utils_1.error)('Failed to pull latest image.');
             process.exit(1);
         }
-        (0, utils_1.log)(`Restarting container ${containerName}...`);
-        const restart = await (0, utils_1.runLive)(`${dockerCommand} restart ${(0, utils_1.shellEscape)(containerName)}`);
+        (0, utils_1.log)(`Recreating container ${containerName} with the latest image...`);
+        const restart = await (0, utils_1.runLive)(`${dockerCommand} rm -f ${(0, utils_1.shellEscape)(containerName)} >/dev/null 2>&1 || true && ` +
+            `${dockerCommand} run -d --name ${(0, utils_1.shellEscape)(containerName)} -p ${port}:3142 -v ${(0, utils_1.shellEscape)(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`);
         if (!restart) {
-            (0, utils_1.error)('Failed to restart container.');
+            (0, utils_1.error)('Failed to recreate container with the latest image.');
             process.exit(1);
         }
         (0, utils_1.ok)('Jarvis updated and restarted successfully!');

@@ -137,6 +137,8 @@ if ! try_docker_host "\${DOCKER_HOST:-}"; then
     "unix://$HOME/.docker/run/docker.sock" \
     "unix://$HOME/.docker/desktop/docker.sock" \
     "\${XDG_RUNTIME_DIR:+unix://$XDG_RUNTIME_DIR/docker.sock}" \
+    "unix://$HOME/.colima/default/docker.sock" \
+    "unix://$HOME/.rd/docker.sock" \
     "unix:///var/run/docker.sock"
   do
     [ -n "$host" ] || continue
@@ -300,7 +302,7 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     const quotedName = os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
     const dockerCommand =
       action === 'status'
-        ? `docker_cmd ps -a --filter "name=${containerName}" --format "{{.Status}}" || docker_cmd inspect ${quotedName} --format "{{.State.Status}}"`
+        ? `docker_cmd ps -a --filter "name=^${containerName}$" --format "{{.Status}}" || docker_cmd inspect ${quotedName} --format "{{.State.Status}}"`
         : action === 'logs'
           ? `docker_cmd logs --tail 200 ${quotedName}`
           : `docker_cmd ${action} ${quotedName}`;

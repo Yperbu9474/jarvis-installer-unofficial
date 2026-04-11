@@ -72,8 +72,53 @@ export async function hasCommand(command: string): Promise<boolean> {
   return result.ok;
 }
 
+function shellPrefix(host?: string): string {
+  return host ? `DOCKER_HOST=${shellEscape(host)} ` : '';
+}
+
+function buildDockerCommand(binary: string, host?: string, useSudo = false): string {
+  const escapedBinary = shellEscape(binary);
+  if (useSudo) {
+    return host
+      ? `sudo env DOCKER_HOST=${shellEscape(host)} ${escapedBinary}`
+      : `sudo ${escapedBinary}`;
+  }
+
+  return `${shellPrefix(host)}${escapedBinary}`;
+}
+
+function dockerHostCandidates(): string[] {
+  const home = os.homedir();
+  const candidates = [
+    process.env.DOCKER_HOST || '',
+    `unix://${home}/.docker/run/docker.sock`,
+    `unix://${home}/.docker/desktop/docker.sock`,
+    process.env.XDG_RUNTIME_DIR ? `unix://${process.env.XDG_RUNTIME_DIR}/docker.sock` : '',
+    `unix://${home}/.colima/default/docker.sock`,
+    `unix://${home}/.rd/docker.sock`,
+    'unix:///var/run/docker.sock',
+  ];
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+async function findDockerBinary(): Promise<string | null> {
+  const pathResult = await run('command -v docker 2>/dev/null');
+  if (pathResult.ok) {
+    return pathResult.output.trim() || 'docker';
+  }
+
+  for (const candidate of ['/usr/local/bin/docker', '/opt/homebrew/bin/docker', '/usr/bin/docker']) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 async function ensureDockerInstalled(): Promise<void> {
-  if (await hasCommand('docker')) {
+  if (await findDockerBinary()) {
     return;
   }
 
@@ -115,59 +160,99 @@ async function ensureDockerInstalled(): Promise<void> {
     process.exit(1);
   }
 
-  if (!(await hasCommand('docker'))) {
+  if (!(await findDockerBinary())) {
     error('Docker installation finished, but the `docker` command is still unavailable.');
     process.exit(1);
   }
 }
 
-async function ensureDockerDaemonReady(dockerCommand: string): Promise<void> {
-  const ready = await run(`${dockerCommand} info >/dev/null 2>&1`);
-  if (ready.ok) {
-    return;
-  }
+async function waitForDockerReady(command: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const result = await run(`${command} info 2>&1`);
+    if (result.ok) {
+      return true;
+    }
 
-  if (process.platform === 'linux' && await hasCommand('systemctl')) {
-    log('Starting Docker service...');
-    const started = await runLive('sudo systemctl enable --now docker');
-    if (started) {
-      const retry = await run(`${dockerCommand} info >/dev/null 2>&1`);
-      if (retry.ok) {
-        return;
-      }
+    if (attempt < 4) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
 
-  if (process.platform === 'darwin') {
-    error('Docker is installed, but the daemon is not running. Open Docker Desktop and rerun the command.');
-  } else {
-    error('Docker is installed, but it is not ready yet. Make sure the Docker service is running and rerun the command.');
-  }
-  process.exit(1);
+  return false;
 }
 
 export async function getDockerCommand(): Promise<string> {
   await ensureDockerInstalled();
-
-  const direct = await run('docker info 2>&1');
-  if (direct.ok) {
-    return 'docker';
+  const dockerBinary = await findDockerBinary();
+  if (!dockerBinary) {
+    error('Docker was expected to be installed, but the Docker CLI could not be found.');
+    process.exit(1);
   }
 
-  const permissionDenied = /permission denied/i.test(direct.output);
-  const dockerCommand = permissionDenied ? 'sudo docker' : 'docker';
+  const hosts = ['' as string, ...dockerHostCandidates()];
+  const triedCommands = new Set<string>();
+  const permissionDeniedCommands: string[] = [];
 
-  if (permissionDenied) {
+  const tryCommand = async (host?: string, useSudo = false): Promise<string | null> => {
+    const command = buildDockerCommand(dockerBinary, host || undefined, useSudo);
+    if (triedCommands.has(command)) {
+      return null;
+    }
+    triedCommands.add(command);
+
+    const result = await run(`${command} info 2>&1`);
+    if (result.ok) {
+      return command;
+    }
+
+    if (/permission denied/i.test(result.output)) {
+      permissionDeniedCommands.push(command);
+    }
+
+    return null;
+  };
+
+  for (const host of hosts) {
+    const working = await tryCommand(host);
+    if (working) {
+      return working;
+    }
+  }
+
+  if (process.platform === 'linux' && await hasCommand('systemctl')) {
+    log('Starting Docker service...');
+    await runLive('sudo systemctl enable --now docker');
+
+    for (const host of hosts) {
+      const command = buildDockerCommand(dockerBinary, host || undefined);
+      if (await waitForDockerReady(command)) {
+        return command;
+      }
+    }
+  }
+
+  if (permissionDeniedCommands.length) {
     warn('Docker requires elevated privileges in this shell. Using sudo for Docker commands.');
     const sudoReady = await runLive('sudo -v');
     if (!sudoReady) {
       error('Unable to acquire sudo privileges for Docker commands.');
       process.exit(1);
     }
+
+    for (const host of hosts) {
+      const command = buildDockerCommand(dockerBinary, host || undefined, true);
+      if (await waitForDockerReady(command)) {
+        return command;
+      }
+    }
   }
 
-  await ensureDockerDaemonReady(dockerCommand);
-  return dockerCommand;
+  if (process.platform === 'darwin') {
+    error('Docker is installed, but no reachable Docker daemon was found. Open Docker Desktop or start your container runtime and rerun the command.');
+  } else {
+    error('Docker is installed, but no reachable Docker daemon was found. Checked common Docker, Colima, Rancher Desktop, and local socket locations.');
+  }
+  process.exit(1);
 }
 
 export async function ask(question: string, defaultVal?: string): Promise<string> {

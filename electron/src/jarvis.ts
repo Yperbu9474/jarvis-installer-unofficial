@@ -196,6 +196,18 @@ fi
 `;
 }
 
+function buildDockerRunCommand(profile: InstallProfile): string {
+  const port = profile.port || 3142;
+  const containerName = profile.containerName || 'jarvis-daemon';
+  const dataDir = profile.dataDir || '~/.jarvis-docker';
+
+  if (os.platform() === 'win32') {
+    return `docker_cmd run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest`;
+  }
+
+  return `docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`;
+}
+
 export async function installJarvis(profile: InstallProfile): Promise<InstallResult> {
   const result = await runProfileCommand(profile, buildInstallScript(profile));
   if (result.ok) {
@@ -223,15 +235,19 @@ function buildUpdateScript(profile: InstallProfile): string {
     if (os.platform() === 'win32') {
       return `
 ${dockerPowerShellPreamble()}
+$dataDir = ${pwshQuote(profile.dataDir || '~/.jarvis-docker')}
 $containerName = ${pwshQuote(containerName)}
+$port = ${profile.port || 3142}
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
-docker_cmd restart $containerName
+try { docker_cmd rm -f $containerName 2>$null | Out-Null } catch { }
+${buildDockerRunCommand(profile)}
 `;
     }
     return `
 ${dockerShellPreamble()}
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
-docker_cmd restart ${bashQuote(containerName)}
+docker_cmd rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
+${buildDockerRunCommand(profile)}
 `;
   }
 
