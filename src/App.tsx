@@ -5,6 +5,7 @@ import '@xterm/xterm/css/xterm.css';
 import type {
   InstallMode,
   InstallProfile,
+  InstallProgress,
   InstallState,
   InstallerUpdateState,
   JarvisReleaseNotice,
@@ -37,7 +38,7 @@ const modeContent: Record<InstallMode, { label: string; summary: string; caution
   wsl2: {
     label: 'Windows WSL2',
     summary: 'Best for Windows users who want the Linux runtime path.',
-    caution: 'Requires a working WSL2 distro and Windows support already enabled.',
+    caution: 'If WSL is missing, the installer will try to enable it and add Ubuntu automatically. Some PCs may still require a reboot.',
   },
 };
 
@@ -70,10 +71,6 @@ function getValidationErrors(profile: InstallProfile, summary: SystemSummary | n
     errors.push('WSL2 mode is only available on Windows hosts.');
   }
 
-  if (profile.mode === 'wsl2' && !summary.wslDistros.length) {
-    errors.push('No WSL distros were detected. Install or configure WSL2 first.');
-  }
-
   if (profile.mode === 'docker') {
     if (!profile.containerName || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(profile.containerName)) {
       errors.push('Container name must start with an alphanumeric character and only use letters, numbers, dot, dash, or underscore.');
@@ -97,11 +94,15 @@ function getRuntimeNotes(profile: InstallProfile, summary: SystemSummary | null)
   }
 
   if (profile.mode === 'docker' && !summary.hasDocker) {
-    notes.push('Docker is not detected. The installer will try to install or start it where supported.');
+    notes.push(summary.platform === 'win32'
+      ? 'Docker is not detected. The installer will install Docker Desktop and enable the WSL backend if needed.'
+      : 'Docker is not detected. The installer will try to install or start it where supported.');
   }
 
   if (profile.mode === 'wsl2' && summary.platform === 'win32') {
-    notes.push('Jarvis commands will run inside WSL, not directly in Windows PowerShell.');
+    notes.push(summary.wslDistros.length
+      ? 'Jarvis commands will run inside WSL, not directly in Windows PowerShell.'
+      : 'No WSL distro is installed yet. The installer will enable WSL and provision Ubuntu automatically.');
   }
 
   if (profile.installSidecar) {
@@ -248,6 +249,7 @@ export default function App() {
   const [activity, setActivity] = useState('Loading environment details...');
   const [logText, setLogText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null);
   const [installState, setInstallState] = useState<InstallState | null>(null);
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const terminalMount = useRef<HTMLDivElement | null>(null);
@@ -347,6 +349,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const remove = window.jarvisApi.onInstallProgress((payload) => {
+      setInstallProgress(payload);
+      setActivity(payload.message);
+      if (payload.chunk) {
+        setLogText((current) => `${current}${payload.chunk}`);
+      }
+    });
+
+    return remove;
+  }, []);
+
+  useEffect(() => {
     const remove = window.jarvisApi.onTerminalData(({ id, data }) => {
       if (id === terminalIdRef.current) terminalRef.current?.write(data);
     });
@@ -426,6 +440,8 @@ export default function App() {
     }
 
     setBusy(true);
+    setInstallProgress({ percent: 3, message: 'Checking existing Jarvis state...' });
+    setLogText('');
     setActivity(`Checking existing Jarvis state in ${modeContent[normalizedProfile.mode].label} mode...`);
     try {
       const state = await window.jarvisApi.detectState(normalizedProfile);
@@ -434,6 +450,7 @@ export default function App() {
       if (state.running) {
         const logs = await window.jarvisApi.lifecycle(normalizedProfile, 'logs');
         setLogText(logs.output || 'Jarvis is already running.');
+        setInstallProgress(null);
         setActivity(`Jarvis is already running. Dashboard expected at ${state.dashboardUrl}`);
         return;
       }
@@ -442,20 +459,24 @@ export default function App() {
         const startResult = await window.jarvisApi.lifecycle(normalizedProfile, 'start');
         const logs = await window.jarvisApi.lifecycle(normalizedProfile, 'logs');
         setLogText(logs.output || startResult.output || 'Jarvis started.');
+        setInstallProgress(null);
         setActivity(startResult.ok ? `Jarvis was already installed and has been started.` : 'Jarvis is installed but failed to start. Review logs below.');
         const refreshed = await window.jarvisApi.detectState(normalizedProfile);
         setInstallState(refreshed);
         return;
       }
 
+      setInstallProgress({ percent: 8, message: `Installing Jarvis in ${modeContent[normalizedProfile.mode].label} mode...` });
       setActivity(`Installing Jarvis in ${modeContent[normalizedProfile.mode].label} mode...`);
       const result = await window.jarvisApi.install(normalizedProfile);
       setLogText(result.output || 'Installer completed without additional output.');
+      setInstallProgress({ percent: result.ok ? 100 : installProgress?.percent || 0, message: result.ok ? 'Install finished.' : 'Install failed.' });
       setActivity(result.ok ? `Install finished. Dashboard expected at ${result.dashboardUrl}` : 'Install failed. Review the output below.');
       const refreshed = await window.jarvisApi.detectState(normalizedProfile);
       setInstallState(refreshed);
     } catch (error) {
       setLogText(String(error));
+      setInstallProgress((current) => current ? { ...current, message: 'Install failed.' } : null);
       setActivity('Install failed before completion.');
     } finally {
       setBusy(false);
@@ -740,9 +761,9 @@ export default function App() {
                   value={normalizedProfile.wslDistro || summary?.wslDistros[0] || ''}
                   onChange={(event) => void persistProfile({ ...normalizedProfile, wslDistro: event.target.value })}
                 >
-                  {(summary?.wslDistros || ['']).map((distro) => (
+                  {((summary?.wslDistros.length ? summary.wslDistros : ['']) || ['']).map((distro) => (
                     <option key={distro} value={distro}>
-                      {distro || 'Default distro'}
+                      {distro || 'Auto-install default Ubuntu distro'}
                     </option>
                   ))}
                 </select>
@@ -792,6 +813,18 @@ export default function App() {
               ◎ Status
             </button>
           </div>
+          {installProgress ? (
+            <div className="installProgressCard">
+              <div className="installProgressHeader">
+                <strong>Installation progress</strong>
+                <span>{Math.max(0, Math.min(100, Math.round(installProgress.percent)))}%</span>
+              </div>
+              <div className="installProgressTrack" aria-hidden="true">
+                <div className="installProgressFill" style={{ width: `${Math.max(0, Math.min(100, installProgress.percent))}%` }} />
+              </div>
+              <p className="installProgressText">{installProgress.message}</p>
+            </div>
+          ) : null}
         </section>
 
         <div className="sectionLabel">§ DAEMON</div>

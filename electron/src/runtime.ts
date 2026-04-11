@@ -44,7 +44,11 @@ function parseWslDistros(raw: string): string[] {
 export async function execCommand(
   command: string,
   args: string[],
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    onStdout?: (chunk: string) => void;
+    onStderr?: (chunk: string) => void;
+  } = {},
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
@@ -53,10 +57,14 @@ export async function execCommand(
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      options.onStdout?.(text);
     });
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      options.onStderr?.(text);
     });
     child.on('close', (code) => {
       resolve({ ok: code === 0, code, stdout, stderr });
@@ -70,6 +78,26 @@ export async function execCommand(
 export async function commandExists(command: string): Promise<boolean> {
   const platform = os.platform();
   if (platform === 'win32') {
+    if (command === 'docker') {
+      const result = await execCommand('powershell.exe', [
+        '-NoProfile',
+        '-Command',
+        `
+        $existing = Get-Command docker -ErrorAction SilentlyContinue
+        if ($existing) { exit 0 }
+        $candidates = @(
+          "$Env:ProgramFiles\\Docker\\Docker\\resources\\bin\\docker.exe",
+          "$Env:ProgramFiles\\Docker\\cli-plugins\\docker.exe",
+          "$Env:LocalAppData\\Programs\\Docker\\Docker\\resources\\bin\\docker.exe"
+        )
+        foreach ($candidate in $candidates) {
+          if (Test-Path $candidate) { exit 0 }
+        }
+        exit 1
+        `,
+      ]);
+      return result.ok;
+    }
     const result = await execCommand('powershell.exe', [
       '-NoProfile',
       '-Command',
@@ -81,18 +109,26 @@ export async function commandExists(command: string): Promise<boolean> {
   return result.ok;
 }
 
-export async function runProfileCommand(profile: InstallProfile, script: string): Promise<CommandResult> {
+export async function runProfileCommand(
+  profile: InstallProfile,
+  script: string,
+  options: {
+    env?: NodeJS.ProcessEnv;
+    onStdout?: (chunk: string) => void;
+    onStderr?: (chunk: string) => void;
+  } = {},
+): Promise<CommandResult> {
   if (profile.mode === 'wsl2') {
     const distro = sanitizeWslDistro(profile.wslDistro);
     const distroArgs = distro ? ['-d', distro] : [];
-    return execCommand('wsl.exe', [...distroArgs, '--', 'bash', '-lc', script]);
+    return execCommand('wsl.exe', [...distroArgs, '--', 'bash', '-lc', script], options);
   }
 
   if (os.platform() === 'win32') {
-    return execCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
+    return execCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], options);
   }
 
-  return execCommand('bash', ['-lc', script]);
+  return execCommand('bash', ['-lc', script], options);
 }
 
 function bunPathPreamble(): string {

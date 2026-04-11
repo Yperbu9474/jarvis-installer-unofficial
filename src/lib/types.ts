@@ -30,6 +30,12 @@ export type InstallResult = {
   dashboardUrl: string;
 };
 
+export type InstallProgress = {
+  percent: number;
+  message: string;
+  chunk?: string;
+};
+
 export type UpdateResult = {
   ok: boolean;
   output: string;

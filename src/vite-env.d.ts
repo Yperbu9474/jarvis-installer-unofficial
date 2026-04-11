@@ -2,6 +2,7 @@
 
 import type {
   InstallProfile,
+  InstallProgress,
   InstallResult,
   InstallerUpdateState,
   JarvisReleaseNotice,
@@ -35,6 +36,7 @@ declare global {
       terminalClose: (id: string) => Promise<{ ok: true }>;
       onTerminalData: (listener: (payload: { id: string; data: string }) => void) => () => void;
       onInstallerUpdate: (listener: (payload: InstallerUpdateState) => void) => () => void;
+      onInstallProgress: (listener: (payload: InstallProgress) => void) => () => void;
       setupProxy: (config: ProxyConfig) => Promise<ProxyResult>;
     };
   }

@@ -2,11 +2,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { app } from 'electron';
-import type { InstallProfile, InstallResult, InstallState, LifecycleAction, LifecycleResult, SystemSummary, UpdateResult } from '../../src/lib/types';
+import type {
+  InstallProfile,
+  InstallProgress,
+  InstallResult,
+  InstallState,
+  LifecycleAction,
+  LifecycleResult,
+  SystemSummary,
+  UpdateResult,
+} from '../../src/lib/types';
 import {
   detectInstallState,
   dockerPowerShellPreamble,
   dockerShellPreamble,
+  execCommand,
   lifecycle,
   loadSystemSummary,
   runProfileCommand,
@@ -34,17 +44,18 @@ function bashInstallPackages(packages: string[]) {
   return `
 set -e
 if command -v apt-get >/dev/null 2>&1; then
-  sudo apt-get update && sudo apt-get install -y ${joined}
+  run_as_root apt-get update
+  run_as_root apt-get install -y ${joined}
 elif command -v dnf >/dev/null 2>&1; then
-  sudo dnf install -y ${joined}
+  run_as_root dnf install -y ${joined}
 elif command -v yum >/dev/null 2>&1; then
-  sudo yum install -y ${joined}
+  run_as_root yum install -y ${joined}
 elif command -v pacman >/dev/null 2>&1; then
-  sudo pacman -Sy --noconfirm ${joined}
+  run_as_root pacman -Sy --noconfirm ${joined}
 elif command -v zypper >/dev/null 2>&1; then
-  sudo zypper --non-interactive install ${joined}
+  run_as_root zypper --non-interactive install ${joined}
 elif command -v apk >/dev/null 2>&1; then
-  sudo apk add ${joined}
+  run_as_root apk add ${joined}
 elif command -v brew >/dev/null 2>&1; then
   brew install ${joined}
 else
@@ -80,6 +91,26 @@ function normalizePort(value: unknown): number {
 function bunBootstrapScript() {
   return `
 set -euo pipefail
+run_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+    return
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Administrative privileges are required for this step, but sudo is not installed." >&2
+    exit 1
+  fi
+
+  if ! sudo -n true >/dev/null 2>&1; then
+    echo "Administrative privileges are required for this step, but sudo needs a password. Re-run from an elevated shell or configure passwordless sudo." >&2
+    exit 1
+  fi
+
+  sudo -n "$@"
+}
+
+echo "JARVIS_PROGRESS:12:Checking required packages"
 if ! command -v curl >/dev/null 2>&1; then
   ${bashInstallPackages(['curl'])}
 fi
@@ -89,6 +120,7 @@ fi
 if ! command -v unzip >/dev/null 2>&1; then
   ${bashInstallPackages(['unzip'])}
 fi
+echo "JARVIS_PROGRESS:22:Installing Bun runtime"
 if ! command -v bun >/dev/null 2>&1; then
   curl -fsSL https://bun.sh/install | bash
 fi
@@ -103,12 +135,33 @@ fi
 function dockerBootstrapScript() {
   return `
 set -euo pipefail
+run_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+    return
+  fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Administrative privileges are required for Docker setup, but sudo is not installed." >&2
+    exit 1
+  fi
+
+  if ! sudo -n true >/dev/null 2>&1; then
+    echo "Administrative privileges are required for Docker setup, but sudo needs a password. Re-run from an elevated shell or configure passwordless sudo." >&2
+    exit 1
+  fi
+
+  sudo -n "$@"
+}
+
+echo "JARVIS_PROGRESS:15:Checking Docker runtime"
 if ! command -v docker >/dev/null 2>&1 && [ ! -x /usr/local/bin/docker ] && [ ! -x /opt/homebrew/bin/docker ] && [ ! -x /usr/bin/docker ]; then
-  curl -fsSL https://get.docker.com | sh
+  curl -fsSL https://get.docker.com | run_as_root sh
 fi
 if command -v systemctl >/dev/null 2>&1; then
-  sudo systemctl enable docker || true
-  sudo systemctl start docker || true
+  echo "JARVIS_PROGRESS:28:Starting Docker service"
+  run_as_root systemctl enable docker || true
+  run_as_root systemctl start docker || true
 fi
 ${dockerShellPreamble()}
 `;
@@ -116,7 +169,344 @@ ${dockerShellPreamble()}
 
 function dockerBootstrapScriptWindows() {
   return `
+$ErrorActionPreference = 'Stop'
+function Invoke-AdminExpression {
+  param([string]$Command)
+  $bytes = [System.Text.Encoding]::Unicode.GetBytes($Command)
+  $encoded = [Convert]::ToBase64String($bytes)
+  $process = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-EncodedCommand',
+    $encoded
+  )
+  if ($process.ExitCode -ne 0) {
+    throw "Elevated command failed with exit code $($process.ExitCode): $Command"
+  }
+}
+
+function Get-WslCommand {
+  $existing = Get-Command wsl.exe -ErrorAction SilentlyContinue
+  if ($existing) {
+    return $existing.Source
+  }
+
+  $fallback = Join-Path $env:SystemRoot 'System32\\wsl.exe'
+  if (Test-Path $fallback) {
+    return $fallback
+  }
+
+  throw 'wsl.exe is not available on this Windows installation.'
+}
+
+function Ensure-WslRuntime {
+  Write-Host 'JARVIS_PROGRESS:10:Checking WSL prerequisites'
+  $wslCommand = Get-WslCommand
+  & $wslCommand --status *> $null
+  if ($LASTEXITCODE -eq 0) {
+    return $wslCommand
+  }
+
+  Invoke-AdminExpression ('"' + $wslCommand + '" --install --no-distribution')
+  $statusOutput = & $wslCommand --status 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0) {
+    if ($statusOutput -match 'restart|reboot') {
+      throw ('WSL was enabled, but Windows must reboot before Docker can finish installing.' + [Environment]::NewLine + $statusOutput)
+    }
+    throw ('WSL could not be initialized automatically.' + [Environment]::NewLine + $statusOutput)
+  }
+
+  return $wslCommand
+}
+
+function Find-DockerDesktopCommand([switch]$AllowMissing) {
+  $candidates = @(
+    "$Env:ProgramFiles\\Docker\\Docker\\Docker Desktop.exe",
+    "$Env:LocalAppData\\Programs\\Docker\\Docker\\Docker Desktop.exe"
+  )
+
+  foreach ($candidate in $candidates | Select-Object -Unique) {
+    if ($candidate -and (Test-Path $candidate)) {
+      return $candidate
+    }
+  }
+
+  if ($AllowMissing) {
+    return $null
+  }
+
+  throw 'Docker Desktop was not found after installation.'
+}
+
+function Find-DockerCliCommand([switch]$AllowMissing) {
+  $existing = Get-Command docker -ErrorAction SilentlyContinue
+  if ($existing) {
+    return $existing.Source
+  }
+
+  $candidates = @(
+    "$Env:ProgramFiles\\Docker\\Docker\\resources\\bin\\docker.exe",
+    "$Env:ProgramFiles\\Docker\\cli-plugins\\docker.exe",
+    "$Env:LocalAppData\\Programs\\Docker\\Docker\\resources\\bin\\docker.exe"
+  )
+
+  foreach ($candidate in $candidates | Select-Object -Unique) {
+    if ($candidate -and (Test-Path $candidate)) {
+      return $candidate
+    }
+  }
+
+  if ($AllowMissing) {
+    return $null
+  }
+
+  throw 'docker.exe was not found after Docker Desktop installation.'
+}
+
+function Install-DockerDesktop {
+  Write-Host 'JARVIS_PROGRESS:28:Installing Docker Desktop'
+  $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+  if ($winget) {
+    Invoke-AdminExpression 'winget.exe install --id Docker.DockerDesktop --exact --accept-package-agreements --accept-source-agreements --silent'
+    return
+  }
+
+  $installerPath = Join-Path $env:TEMP 'DockerDesktopInstaller.exe'
+  Invoke-WebRequest -UseBasicParsing -Uri 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe' -OutFile $installerPath
+  $process = Start-Process $installerPath -Verb RunAs -Wait -PassThru -ArgumentList @(
+    'install',
+    '--quiet',
+    '--accept-license',
+    '--backend=wsl-2'
+  )
+  if ($process.ExitCode -ne 0) {
+    throw "Docker Desktop installer exited with code $($process.ExitCode)."
+  }
+}
+
+function Wait-DockerReady([int]$TimeoutSeconds = 360) {
+  Write-Host 'JARVIS_PROGRESS:55:Waiting for Docker engine'
+  $dockerDesktop = Find-DockerDesktopCommand
+  Start-Process $dockerDesktop | Out-Null
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    $dockerCli = Find-DockerCliCommand -AllowMissing
+    if ($dockerCli) {
+      & $dockerCli info *> $null
+      if ($LASTEXITCODE -eq 0) {
+        return
+      }
+    }
+    Start-Sleep -Seconds 5
+  }
+
+  throw 'Docker Desktop was installed, but the Docker engine did not become ready in time.'
+}
+
+$null = Ensure-WslRuntime
+if (-not (Find-DockerCliCommand -AllowMissing)) {
+  Install-DockerDesktop
+}
+Wait-DockerReady
+Write-Host 'JARVIS_PROGRESS:68:Docker is ready'
 ${dockerPowerShellPreamble()}
+`;
+}
+
+function wslJarvisInstallScript(profile: InstallProfile, port: number, repo: string) {
+  return `
+${bunBootstrapScript()}
+echo "JARVIS_PROGRESS:72:Installing Jarvis packages"
+bun install -g @usejarvis/brain
+${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
+echo "JARVIS_PROGRESS:86:Writing Jarvis configuration"
+mkdir -p "$HOME/.jarvis"
+if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
+  cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
+# Jarvis configuration — edit this file then run: jarvis onboard
+daemon:
+  port: ${port}
+  data_dir: "~/.jarvis"
+
+llm:
+  primary: "anthropic"
+  fallback: []
+  anthropic:
+    api_key: ""
+
+personality:
+  core_traits:
+    - "loyal"
+    - "efficient"
+
+authority:
+  default_level: 3
+JARVIS_CONFIG_EOF
+fi
+echo "JARVIS_PROGRESS:96:Finalizing WSL install"
+echo "Installed Jarvis from ${repo}"
+`;
+}
+
+function wslBootstrapScriptWindows(profile: InstallProfile, port: number, repo: string) {
+  return `
+$ErrorActionPreference = 'Stop'
+function Invoke-AdminExpression {
+  param([string]$Command)
+  $bytes = [System.Text.Encoding]::Unicode.GetBytes($Command)
+  $encoded = [Convert]::ToBase64String($bytes)
+  $process = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-EncodedCommand',
+    $encoded
+  )
+  if ($process.ExitCode -ne 0) {
+    throw "Elevated command failed with exit code $($process.ExitCode): $Command"
+  }
+}
+
+function Get-WslCommand {
+  $existing = Get-Command wsl.exe -ErrorAction SilentlyContinue
+  if ($existing) {
+    return $existing.Source
+  }
+
+  $fallback = Join-Path $env:SystemRoot 'System32\\wsl.exe'
+  if (Test-Path $fallback) {
+    return $fallback
+  }
+
+  throw 'wsl.exe is not available on this Windows installation.'
+}
+
+function Supports-WslWebDownload([string]$WslCommand) {
+  $helpOutput = & $WslCommand --help 2>&1 | Out-String
+  return $helpOutput -match '--web-download'
+}
+
+function Get-WslDistros([string]$WslCommand) {
+  $raw = & $WslCommand -l -q 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0) {
+    return @()
+  }
+
+  return @(
+    $raw -split "\\r?\\n" |
+      ForEach-Object { $_.Trim() } |
+      Where-Object { $_ }
+  )
+}
+
+function Ensure-WslRuntime {
+  Write-Host 'JARVIS_PROGRESS:10:Checking WSL prerequisites'
+  $wslCommand = Get-WslCommand
+  & $wslCommand --status *> $null
+  if ($LASTEXITCODE -eq 0) {
+    return $wslCommand
+  }
+
+  Invoke-AdminExpression ('"' + $wslCommand + '" --install --no-distribution')
+  $statusOutput = & $wslCommand --status 2>&1 | Out-String
+  if ($LASTEXITCODE -ne 0) {
+    if ($statusOutput -match 'restart|reboot') {
+      throw ('WSL was enabled, but Windows must reboot before setup can continue.' + [Environment]::NewLine + $statusOutput)
+    }
+    throw ('WSL could not be initialized automatically.' + [Environment]::NewLine + $statusOutput)
+  }
+
+  return $wslCommand
+}
+
+function Ensure-WslDistro([string]$WslCommand, [string]$PreferredName) {
+  Write-Host 'JARVIS_PROGRESS:28:Checking WSL distro'
+  $distros = Get-WslDistros $WslCommand
+  if ($PreferredName -and ($distros -contains $PreferredName)) {
+    return $PreferredName
+  }
+
+  if ($distros.Count -eq 0) {
+    $target = if ($PreferredName) { $PreferredName } else { 'Ubuntu' }
+    Write-Host "JARVIS_PROGRESS:40:Installing WSL distro $target"
+    $args = New-Object System.Collections.Generic.List[string]
+    $args.Add('--install')
+    if (Supports-WslWebDownload $WslCommand) {
+      $args.Add('--web-download')
+    }
+    $args.Add('-d')
+    $args.Add($target)
+    & $WslCommand @args
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to install the WSL distro '$target'."
+    }
+    Start-Sleep -Seconds 2
+    $distros = Get-WslDistros $WslCommand
+  }
+
+  if ($PreferredName -and ($distros -contains $PreferredName)) {
+    return $PreferredName
+  }
+
+  if ($distros.Count -eq 0) {
+    throw 'WSL was enabled, but no Linux distro is available yet.'
+  }
+
+  return $distros[0]
+}
+
+function Ensure-WslJarvisUser([string]$WslCommand, [string]$DistroName) {
+  $existingUser = (& $WslCommand -d $DistroName -- bash -lc "id -un" 2>$null | Out-String).Trim()
+  if (-not $existingUser -or $existingUser -eq 'root') {
+    $existingUser = (& $WslCommand -d $DistroName -u root -- bash -lc "getent passwd 1000 | cut -d: -f1" 2>$null | Out-String).Trim()
+  }
+
+  if (-not $existingUser) {
+    $existingUser = 'jarvis'
+  }
+
+  Write-Host "JARVIS_PROGRESS:55:Preparing Linux user $existingUser"
+
+  $bootstrap = @'
+set -euo pipefail
+TARGET_USER="\${TARGET_USER:-jarvis}"
+if ! id -u "$TARGET_USER" >/dev/null 2>&1; then
+  useradd -m -s /bin/bash "$TARGET_USER"
+fi
+if command -v sudo >/dev/null 2>&1 && getent group sudo >/dev/null 2>&1; then
+  usermod -aG sudo "$TARGET_USER"
+fi
+mkdir -p /etc/sudoers.d
+printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$TARGET_USER" >"/etc/sudoers.d/90-$TARGET_USER"
+chmod 0440 "/etc/sudoers.d/90-$TARGET_USER"
+cat >/etc/wsl.conf <<'WSL_USER_EOF'
+[user]
+default=TARGET_USER_PLACEHOLDER
+WSL_USER_EOF
+sed -i "s/TARGET_USER_PLACEHOLDER/$TARGET_USER/" /etc/wsl.conf
+'@
+
+  $bootstrapCommand = 'export TARGET_USER=' + [System.Management.Automation.Language.CodeGeneration]::QuoteArgument($existingUser) + '; ' + $bootstrap
+  & $WslCommand -d $DistroName -u root -- bash -lc $bootstrapCommand
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to prepare a Linux user for Jarvis inside WSL.'
+  }
+
+  return $existingUser
+}
+
+$desiredDistro = ${pwshQuote(profile.wslDistro || '')}
+$wslCommand = Ensure-WslRuntime
+$selectedDistro = Ensure-WslDistro $wslCommand $desiredDistro
+$selectedUser = Ensure-WslJarvisUser $wslCommand $selectedDistro
+$installScript = @'
+${wslJarvisInstallScript(profile, port, repo)}
+'@
+
+Write-Host "JARVIS_WSL_DISTRO=$selectedDistro"
+Write-Host "JARVIS_PROGRESS:65:Running Jarvis install inside WSL"
+& $wslCommand -d $selectedDistro -u $selectedUser -- bash -lc $installScript
 `;
 }
 
@@ -133,58 +523,41 @@ ${dockerBootstrapScriptWindows()}
 $dataDir = ${pwshQuote(dataDir)}
 $containerName = ${pwshQuote(containerName)}
 $port = ${port}
+Write-Host 'JARVIS_PROGRESS:76:Preparing Docker data directory'
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+Write-Host 'JARVIS_PROGRESS:86:Pulling Jarvis container image'
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
 try { docker_cmd rm -f $containerName 2>$null | Out-Null } catch { }
+Write-Host 'JARVIS_PROGRESS:96:Starting Jarvis container'
 docker_cmd run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest
 `;
     }
 
     return `
 ${dockerBootstrapScript()}
+echo "JARVIS_PROGRESS:72:Preparing Docker data directory"
 mkdir -p ${bashQuote(dataDir)}
+echo "JARVIS_PROGRESS:86:Pulling Jarvis container image"
 docker_cmd pull ghcr.io/vierisid/jarvis:latest
 docker_cmd rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
+echo "JARVIS_PROGRESS:96:Starting Jarvis container"
 docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest
 `;
   }
 
   if (profile.mode === 'wsl2') {
-    return `
-${bunBootstrapScript()}
-bun install -g @usejarvis/brain
-${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
-mkdir -p "$HOME/.jarvis"
-if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
-  cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
-# Jarvis configuration — edit this file then run: jarvis onboard
-daemon:
-  port: ${port}
-  data_dir: "~/.jarvis"
-
-llm:
-  primary: "anthropic"
-  fallback: []
-  anthropic:
-    api_key: ""
-
-personality:
-  core_traits:
-    - "loyal"
-    - "efficient"
-
-authority:
-  default_level: 3
-JARVIS_CONFIG_EOF
-fi
-echo "Installed Jarvis from ${repo}"
-`;
+    if (os.platform() === 'win32') {
+      return wslBootstrapScriptWindows(profile, port, repo);
+    }
+    return wslJarvisInstallScript(profile, port, repo);
   }
 
   return `
 ${bunBootstrapScript()}
+echo "JARVIS_PROGRESS:72:Installing Jarvis packages"
 bun install -g @usejarvis/brain
 ${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
+echo "JARVIS_PROGRESS:86:Writing Jarvis configuration"
 mkdir -p "$HOME/.jarvis"
 if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
   cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
@@ -208,6 +581,7 @@ authority:
   default_level: 3
 JARVIS_CONFIG_EOF
 fi
+echo "JARVIS_PROGRESS:96:Finalizing install"
 `;
 }
 
@@ -223,10 +597,90 @@ function buildDockerRunCommand(profile: InstallProfile): string {
   return `docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`;
 }
 
-export async function installJarvis(profile: InstallProfile): Promise<InstallResult> {
-  const result = await runProfileCommand(profile, buildInstallScript(profile));
+function createInstallProgressParser(
+  notify?: (progress: InstallProgress) => void,
+): { onChunk: (chunk: string) => void; flush: () => void; finish: (ok: boolean) => void } {
+  let buffered = '';
+  let percent = 2;
+  let message = 'Preparing install';
+
+  notify?.({ percent, message });
+
+  const emitChunk = (chunk: string) => {
+    if (!chunk) return;
+    notify?.({ percent, message, chunk });
+  };
+
+  const processLine = (line: string) => {
+    const trimmed = line.replace(/\r?\n$/, '');
+    const marker = trimmed.match(/^JARVIS_PROGRESS:(\d{1,3}):(.*)$/);
+    if (marker) {
+      percent = Math.max(0, Math.min(100, Number.parseInt(marker[1], 10)));
+      message = marker[2].trim() || message;
+      notify?.({ percent, message });
+      return;
+    }
+    emitChunk(line);
+  };
+
+  return {
+    onChunk: (chunk: string) => {
+      buffered += chunk;
+      const lines = buffered.split(/\r?\n/);
+      buffered = lines.pop() ?? '';
+      for (const line of lines) {
+        processLine(`${line}\n`);
+      }
+    },
+    flush: () => {
+      if (!buffered) return;
+      processLine(buffered);
+      buffered = '';
+    },
+    finish: (ok: boolean) => {
+      notify?.({
+        percent: ok ? 100 : percent,
+        message: ok ? 'Install finished' : message || 'Install failed',
+      });
+    },
+  };
+}
+
+export async function installJarvis(
+  profile: InstallProfile,
+  notifyProgress?: (progress: InstallProgress) => void,
+): Promise<InstallResult> {
+  const progress = createInstallProgressParser(notifyProgress);
+  const result =
+    os.platform() === 'win32' && profile.mode === 'wsl2'
+      ? await execCommand(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', buildInstallScript(profile)],
+        { onStdout: progress.onChunk, onStderr: progress.onChunk },
+      )
+      : await runProfileCommand(profile, buildInstallScript(profile), {
+        onStdout: progress.onChunk,
+        onStderr: progress.onChunk,
+      });
+
+  progress.flush();
+  progress.finish(result.ok);
+
   if (result.ok) {
-    await saveProfile(profile);
+    let profileToSave = profile;
+    if (os.platform() === 'win32' && profile.mode === 'wsl2') {
+      const combinedOutput = `${result.stdout}\n${result.stderr}`;
+      const matchedDistro = combinedOutput.match(/JARVIS_WSL_DISTRO=([^\r\n]+)/);
+      if (matchedDistro?.[1]?.trim()) {
+        profileToSave = { ...profile, wslDistro: matchedDistro[1].trim() };
+      } else if (!profile.wslDistro) {
+        const summary = await loadSystemSummary();
+        if (summary.wslDistros[0]) {
+          profileToSave = { ...profile, wslDistro: summary.wslDistros[0] };
+        }
+      }
+    }
+    await saveProfile(profileToSave);
   }
   return {
     ok: result.ok,

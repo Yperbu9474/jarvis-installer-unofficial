@@ -41,7 +41,9 @@ Choose this when:
 What the app does:
 
 - checks for Docker
-- tries to install Docker if possible
+- installs Docker Desktop automatically on Windows when it is missing
+- enables the WSL backend first when Docker Desktop needs it
+- tries to install Docker Engine automatically on Linux when it is missing
 - downloads the Jarvis container
 - creates and starts the container
 - lets you control it from the app
@@ -66,12 +68,14 @@ Choose this when:
 
 What the app does:
 
+- enables WSL automatically when Windows has not set it up yet
+- installs an Ubuntu distro automatically when none exists yet
+- creates a ready-to-use Linux user for the Jarvis install when the distro is brand new
 - runs setup through `wsl.exe`
 - installs Jarvis inside your WSL distro
 - controls Jarvis from inside that WSL environment
 
 Limitations and warnings:
 
-- WSL2 itself may not be installed or enabled
 - some systems will require administrator intervention and a reboot
 - this is not the best default choice for most people

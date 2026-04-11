@@ -28,5 +28,10 @@ contextBridge.exposeInMainWorld('jarvisApi', {
     ipcRenderer.on('installer:update', wrapped);
     return () => ipcRenderer.off('installer:update', wrapped);
   },
+  onInstallProgress: (listener: (payload: unknown) => void) => {
+    const wrapped = (_event: unknown, payload: unknown) => listener(payload);
+    ipcRenderer.on('jarvis:install-progress', wrapped);
+    return () => ipcRenderer.off('jarvis:install-progress', wrapped);
+  },
   setupProxy: (config: unknown) => ipcRenderer.invoke('jarvis:setupProxy', config),
 });
