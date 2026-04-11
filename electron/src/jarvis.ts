@@ -467,6 +467,8 @@ function Ensure-WslJarvisUser([string]$WslCommand, [string]$DistroName) {
     $existingUser = (& $WslCommand -d $DistroName -u root -- bash -lc "getent passwd 1000 | cut -d: -f1" 2>$null | Out-String).Trim()
   }
 
+  $existingUser = ($existingUser -replace '\s+', '')
+
   if (-not $existingUser) {
     $existingUser = 'jarvis'
   }
@@ -498,7 +500,7 @@ chmod 0440 "/etc/sudoers.d/90-$TARGET_USER"
 printf '[user]\ndefault=%s\n' "$TARGET_USER" >/etc/wsl.conf
 '@
 
-  $bootstrapWithEnv = 'export TARGET_USER=' + $existingUser + [Environment]::NewLine + $bootstrap
+  $bootstrapWithEnv = ('export TARGET_USER=' + $existingUser + [char]10 + $bootstrap).Replace([string][char]13, '')
   $bootstrapWithEnv | & $WslCommand -d $DistroName -u root -- bash -s --
   if ($LASTEXITCODE -ne 0) {
     throw 'Failed to prepare a Linux user for Jarvis inside WSL.'
@@ -514,6 +516,7 @@ $selectedUser = Ensure-WslJarvisUser $wslCommand $selectedDistro
 $installScript = @'
 ${wslJarvisInstallScript(profile, port, repo)}
 '@
+$installScript = $installScript.Replace([string][char]13, '')
 
 Write-Host "JARVIS_WSL_DISTRO=$selectedDistro"
 Write-Host "JARVIS_PROGRESS:65:Running Jarvis install inside WSL"
