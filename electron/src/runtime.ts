@@ -45,6 +45,7 @@ export async function execCommand(
   command: string,
   args: string[],
   options: {
+    cwd?: string;
     env?: NodeJS.ProcessEnv;
     onStdout?: (chunk: string) => void;
     onStderr?: (chunk: string) => void;
@@ -52,6 +53,7 @@ export async function execCommand(
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
+      cwd: options.cwd || os.homedir(),
       env: { ...process.env, ...(options.env || {}) },
     });
     let stdout = '';
@@ -113,6 +115,7 @@ export async function runProfileCommand(
   profile: InstallProfile,
   script: string,
   options: {
+    cwd?: string;
     env?: NodeJS.ProcessEnv;
     onStdout?: (chunk: string) => void;
     onStderr?: (chunk: string) => void;
