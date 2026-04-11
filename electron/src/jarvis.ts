@@ -472,14 +472,20 @@ function Ensure-WslJarvisUser([string]$WslCommand, [string]$DistroName) {
 
   Write-Host "JARVIS_PROGRESS:55:Preparing Linux user $existingUser"
 
-  $bootstrap = @'
+$bootstrap = @'
 set -euo pipefail
 TARGET_USER="\${TARGET_USER:-jarvis}"
 if ! id -u "$TARGET_USER" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "$TARGET_USER"
 fi
-if command -v sudo >/dev/null 2>&1 && getent group sudo >/dev/null 2>&1; then
-  usermod -aG sudo "$TARGET_USER"
+if ! command -v sudo >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y sudo
+  else
+    echo "sudo is required for Jarvis bootstrap, but it is not installed on this distro." >&2
+    exit 1
+  fi
 fi
 mkdir -p /etc/sudoers.d
 printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$TARGET_USER" >"/etc/sudoers.d/90-$TARGET_USER"
