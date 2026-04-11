@@ -224,7 +224,7 @@ foreach ($candidate in $candidates | Where-Object { $_ } | Select-Object -Unique
   }
 }
 
-if (-not $resolved -and Test-DockerEndpoint '') {
+if ((-not $resolved) -and (Test-DockerEndpoint '')) {
   Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
   $resolved = $true
 }

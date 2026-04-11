@@ -2,7 +2,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const utils_1 = require("./utils");
-const VERSION = '1.2.1';
+const VERSION = '1.2.2';
 function printHelp() {
     console.log(`
 ${utils_1.c.bold('jarv')} -- Jarvis Unofficial Installer CLI v${VERSION}
