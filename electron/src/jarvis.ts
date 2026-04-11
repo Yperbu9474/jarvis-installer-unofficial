@@ -498,8 +498,8 @@ chmod 0440 "/etc/sudoers.d/90-$TARGET_USER"
 printf '[user]\ndefault=%s\n' "$TARGET_USER" >/etc/wsl.conf
 '@
 
-  $bootstrapCommand = 'export TARGET_USER=' + $existingUser + '; ' + $bootstrap
-  & $WslCommand -d $DistroName -u root -- bash -lc $bootstrapCommand
+  $bootstrapWithEnv = 'export TARGET_USER=' + $existingUser + [Environment]::NewLine + $bootstrap
+  $bootstrapWithEnv | & $WslCommand -d $DistroName -u root -- bash -s --
   if ($LASTEXITCODE -ne 0) {
     throw 'Failed to prepare a Linux user for Jarvis inside WSL.'
   }
@@ -517,7 +517,7 @@ ${wslJarvisInstallScript(profile, port, repo)}
 
 Write-Host "JARVIS_WSL_DISTRO=$selectedDistro"
 Write-Host "JARVIS_PROGRESS:65:Running Jarvis install inside WSL"
-& $wslCommand -d $selectedDistro -u $selectedUser -- bash -lc $installScript
+$installScript | & $wslCommand -d $selectedDistro -u $selectedUser -- bash -s --
 `;
 }
 
