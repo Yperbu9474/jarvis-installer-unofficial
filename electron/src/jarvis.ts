@@ -88,6 +88,29 @@ function normalizePort(value: unknown): number {
   return 3142;
 }
 
+function jarvisConfigContent(port: number): string {
+  return [
+    '# Jarvis configuration - edit this file then run: jarvis onboard',
+    'daemon:',
+    `  port: ${port}`,
+    '  data_dir: "~/.jarvis"',
+    '',
+    'llm:',
+    '  primary: "anthropic"',
+    '  fallback: []',
+    '  anthropic:',
+    '    api_key: ""',
+    '',
+    'personality:',
+    '  core_traits:',
+    '    - "loyal"',
+    '    - "efficient"',
+    '',
+    'authority:',
+    '  default_level: 3',
+  ].join('\n');
+}
+
 function bunBootstrapScript() {
   return `
 set -euo pipefail
@@ -315,6 +338,7 @@ ${dockerPowerShellPreamble()}
 }
 
 function wslJarvisInstallScript(profile: InstallProfile, port: number, repo: string) {
+  const configContent = jarvisConfigContent(port);
   return `
 ${bunBootstrapScript()}
 echo "JARVIS_PROGRESS:72:Installing Jarvis packages"
@@ -323,26 +347,7 @@ ${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
 echo "JARVIS_PROGRESS:86:Writing Jarvis configuration"
 mkdir -p "$HOME/.jarvis"
 if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
-  cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
-# Jarvis configuration — edit this file then run: jarvis onboard
-daemon:
-  port: ${port}
-  data_dir: "~/.jarvis"
-
-llm:
-  primary: "anthropic"
-  fallback: []
-  anthropic:
-    api_key: ""
-
-personality:
-  core_traits:
-    - "loyal"
-    - "efficient"
-
-authority:
-  default_level: 3
-JARVIS_CONFIG_EOF
+  printf '%s\n' ${bashQuote(configContent)} > "$HOME/.jarvis/config.yaml"
 fi
 echo "JARVIS_PROGRESS:96:Finalizing WSL install"
 echo "Installed Jarvis from ${repo}"
@@ -490,11 +495,7 @@ fi
 mkdir -p /etc/sudoers.d
 printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$TARGET_USER" >"/etc/sudoers.d/90-$TARGET_USER"
 chmod 0440 "/etc/sudoers.d/90-$TARGET_USER"
-cat >/etc/wsl.conf <<'WSL_USER_EOF'
-[user]
-default=TARGET_USER_PLACEHOLDER
-WSL_USER_EOF
-sed -i "s/TARGET_USER_PLACEHOLDER/$TARGET_USER/" /etc/wsl.conf
+printf '[user]\ndefault=%s\n' "$TARGET_USER" >/etc/wsl.conf
 '@
 
   $bootstrapCommand = 'export TARGET_USER=' + $existingUser + '; ' + $bootstrap
@@ -526,6 +527,7 @@ function buildInstallScript(profile: InstallProfile): string {
   const repo = profile.jarvisRepo || 'https://github.com/vierisid/jarvis.git';
   const containerName = profile.containerName || 'jarvis-daemon';
   const dataDir = profile.dataDir || (effectiveMode === 'docker' ? '~/.jarvis-docker' : '~/.jarvis');
+  const configContent = jarvisConfigContent(port);
 
   if (effectiveMode === 'docker') {
     if (os.platform() === 'win32') {
@@ -571,26 +573,7 @@ ${profile.installSidecar ? 'bun install -g @usejarvis/sidecar' : ''}
 echo "JARVIS_PROGRESS:86:Writing Jarvis configuration"
 mkdir -p "$HOME/.jarvis"
 if [ ! -f "$HOME/.jarvis/config.yaml" ]; then
-  cat > "$HOME/.jarvis/config.yaml" << 'JARVIS_CONFIG_EOF'
-# Jarvis configuration — edit this file then run: jarvis onboard
-daemon:
-  port: ${port}
-  data_dir: "~/.jarvis"
-
-llm:
-  primary: "anthropic"
-  fallback: []
-  anthropic:
-    api_key: ""
-
-personality:
-  core_traits:
-    - "loyal"
-    - "efficient"
-
-authority:
-  default_level: 3
-JARVIS_CONFIG_EOF
+  printf '%s\n' ${bashQuote(configContent)} > "$HOME/.jarvis/config.yaml"
 fi
 echo "JARVIS_PROGRESS:96:Finalizing install"
 `;
