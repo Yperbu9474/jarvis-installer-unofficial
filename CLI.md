@@ -34,7 +34,7 @@ sudo ln -sf "$HOME/.jarv/dist-cli/jarv.js" /usr/local/bin/jarv
 
 ### `jarv install`
 
-Install the Jarvis daemon. Pulls the Docker image, creates a container, and writes a local profile.
+Install the Jarvis daemon. In Docker mode, `jarv` now auto-installs Docker on supported Linux and macOS setups when it is missing, then pulls the image, creates a container, and writes a local profile.
 
 ```bash
 jarv install
@@ -149,7 +149,7 @@ jarv proxy --domain jarvis.example.com --email user@example.com
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | **Node.js** | 18+ | The install script auto-installs Node 20 if missing |
-| **Docker** | 20+ | Required for `jarv install` / container management |
+| **Docker** | 20+ | Auto-installed when possible for Docker mode; still required for container management |
 | **Linux** | Ubuntu 20.04+ recommended | `jarv proxy` requires Linux (nginx + certbot) |
 | **git** | any | Used to clone and update the installer |
 

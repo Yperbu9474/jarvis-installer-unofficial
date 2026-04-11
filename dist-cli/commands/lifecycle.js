@@ -10,10 +10,11 @@ async function runLifecycle(action, _args) {
     }
     const { mode, containerName = 'jarvis-daemon' } = profile;
     if (mode === 'docker') {
+        const dockerCommand = await (0, utils_1.getDockerCommand)();
         switch (action) {
             case 'start': {
                 (0, utils_1.log)(`Starting Docker container ${containerName}...`);
-                const result = await (0, utils_1.run)(`docker start ${containerName}`);
+                const result = await (0, utils_1.run)(`${dockerCommand} start ${(0, utils_1.shellEscape)(containerName)}`);
                 if (result.ok) {
                     (0, utils_1.ok)('Started.');
                 }
@@ -25,7 +26,7 @@ async function runLifecycle(action, _args) {
             }
             case 'stop': {
                 (0, utils_1.log)(`Stopping Docker container ${containerName}...`);
-                const result = await (0, utils_1.run)(`docker stop ${containerName}`);
+                const result = await (0, utils_1.run)(`${dockerCommand} stop ${(0, utils_1.shellEscape)(containerName)}`);
                 if (result.ok) {
                     (0, utils_1.ok)('Stopped.');
                 }
@@ -37,7 +38,7 @@ async function runLifecycle(action, _args) {
             }
             case 'restart': {
                 (0, utils_1.log)(`Restarting Docker container ${containerName}...`);
-                const result = await (0, utils_1.run)(`docker restart ${containerName}`);
+                const result = await (0, utils_1.run)(`${dockerCommand} restart ${(0, utils_1.shellEscape)(containerName)}`);
                 if (result.ok) {
                     (0, utils_1.ok)('Restarted.');
                 }
@@ -49,13 +50,13 @@ async function runLifecycle(action, _args) {
             }
             case 'status': {
                 (0, utils_1.log)('Container status:');
-                const result = await (0, utils_1.run)(`docker ps -f name=${containerName} --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"`);
+                const result = await (0, utils_1.run)(`${dockerCommand} ps -f ${(0, utils_1.shellEscape)(`name=${containerName}`)} --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"`);
                 console.log(result.output);
                 break;
             }
             case 'logs': {
                 (0, utils_1.log)(`Streaming logs for ${containerName}...`);
-                await (0, utils_1.runLive)(`docker logs -f ${containerName}`);
+                await (0, utils_1.runLive)(`${dockerCommand} logs -f ${(0, utils_1.shellEscape)(containerName)}`);
                 break;
             }
         }

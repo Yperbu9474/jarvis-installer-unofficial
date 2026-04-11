@@ -94,18 +94,20 @@ async function runInstall(args) {
         (0, utils_1.warn)('Installation cancelled.');
         return;
     }
-    const TOTAL = mode === 'docker' ? 3 : 5;
+    const TOTAL = mode === 'docker' ? 4 : 5;
     if (mode === 'docker') {
-        (0, utils_1.step)(1, TOTAL, 'Pulling Jarvis Docker image...');
-        const pull = await (0, utils_1.runLive)('docker pull ghcr.io/vierisid/jarvis:latest');
+        (0, utils_1.step)(1, TOTAL, 'Checking Docker...');
+        const dockerCommand = await (0, utils_1.getDockerCommand)();
+        (0, utils_1.step)(2, TOTAL, 'Pulling Jarvis Docker image...');
+        const pull = await (0, utils_1.runLive)(`${dockerCommand} pull ghcr.io/vierisid/jarvis:latest`);
         if (!pull) {
             (0, utils_1.error)('Failed to pull Docker image.');
             process.exit(1);
         }
-        (0, utils_1.step)(2, TOTAL, 'Removing existing container (if any)...');
-        await (0, utils_1.run)(`docker rm -f ${containerName} 2>/dev/null || true`);
-        (0, utils_1.step)(3, TOTAL, `Starting container on port ${port}...`);
-        const started = await (0, utils_1.runLive)(`docker run -d --name ${containerName} -p ${port}:3142 -v ${dataDir}:/app/data ghcr.io/vierisid/jarvis:latest`);
+        (0, utils_1.step)(3, TOTAL, 'Removing existing container (if any)...');
+        await (0, utils_1.run)(`${dockerCommand} rm -f ${(0, utils_1.shellEscape)(containerName)} 2>/dev/null || true`);
+        (0, utils_1.step)(4, TOTAL, `Starting container on port ${port}...`);
+        const started = await (0, utils_1.runLive)(`${dockerCommand} run -d --name ${(0, utils_1.shellEscape)(containerName)} -p ${port}:3142 -v ${(0, utils_1.shellEscape)(dataDir)}:/app/data ghcr.io/vierisid/jarvis:latest`);
         if (!started) {
             (0, utils_1.error)('Failed to start container.');
             process.exit(1);

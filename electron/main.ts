@@ -17,7 +17,9 @@ import {
   saveProfile,
   updateJarvis,
 } from './src/jarvis';
+import { applyInstallerUpdate, getInstallerUpdateState, initInstallerUpdater, stopInstallerUpdater } from './src/installer-updater';
 import { setupProxy } from './src/proxy';
+import { acknowledgeJarvisRelease, getJarvisReleaseNotice } from './src/releases';
 
 log.initialize();
 
@@ -48,6 +50,9 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  initInstallerUpdater((state) => {
+    mainWindow?.webContents.send('installer:update', state);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -67,6 +72,10 @@ ipcMain.handle('jarvis:update', async (_event, profile) => updateJarvis(profile)
 ipcMain.handle('jarvis:lifecycle', async (_event, payload) => runLifecycleAction(payload.profile, payload.action));
 ipcMain.handle('jarvis:openDashboard', async (_event, url) => shell.openExternal(url));
 ipcMain.handle('jarvis:setupProxy', (_e, config) => setupProxy(config));
+ipcMain.handle('jarvis:getReleaseNotice', async () => getJarvisReleaseNotice());
+ipcMain.handle('jarvis:acknowledgeRelease', async (_event, releaseTag) => acknowledgeJarvisRelease(releaseTag));
+ipcMain.handle('jarvis:getInstallerUpdateState', async () => getInstallerUpdateState());
+ipcMain.handle('jarvis:applyInstallerUpdate', async () => applyInstallerUpdate());
 
 ipcMain.handle('terminal:create', async (_event, payload) => {
   const id = createTerminal(payload, (data) => {
@@ -91,6 +100,7 @@ ipcMain.handle('terminal:close', async (_event, payload) => {
 });
 
 app.on('before-quit', () => {
+  stopInstallerUpdater();
   for (const id of terminalSessions.keys()) {
     closeTerminal(id);
   }

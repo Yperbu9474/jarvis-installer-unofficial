@@ -2,7 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import type { InstallMode, InstallProfile, InstallState, LifecycleAction, SystemSummary, ProxyConfig, ProxyResult } from './lib/types';
+import type {
+  InstallMode,
+  InstallProfile,
+  InstallState,
+  InstallerUpdateState,
+  JarvisReleaseNotice,
+  LifecycleAction,
+  SystemSummary,
+  ProxyConfig,
+  ProxyResult,
+} from './lib/types';
 
 const defaultProfile: InstallProfile = {
   mode: 'native',
@@ -106,6 +116,8 @@ type StateDetection = {
   state: InstallState;
 };
 
+const RELEASE_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+
 function profileSignature(profile: InstallProfile): string {
   return [
     profile.mode,
@@ -178,6 +190,58 @@ async function detectBestState(profile: InstallProfile, summary: SystemSummary |
   };
 }
 
+function formatReleaseDate(value?: string): string | null {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleString();
+}
+
+function installerUpdateTone(update: InstallerUpdateState | null): 'good' | 'warn' | 'off' | 'danger' {
+  if (!update) return 'off';
+
+  switch (update.status) {
+    case 'up-to-date':
+      return 'good';
+    case 'checking':
+    case 'downloading':
+    case 'ready':
+      return 'warn';
+    case 'error':
+      return 'danger';
+    case 'unsupported':
+    case 'idle':
+    default:
+      return 'off';
+  }
+}
+
+function installerUpdateLabel(update: InstallerUpdateState | null): string {
+  if (!update) return 'Checking...';
+
+  switch (update.status) {
+    case 'checking':
+      return 'Checking for updates';
+    case 'downloading':
+      return update.progress != null ? `Downloading ${update.progress}%` : 'Downloading update';
+    case 'ready':
+      return 'Restart to apply';
+    case 'up-to-date':
+      return 'Up to date';
+    case 'error':
+      return 'Update check failed';
+    case 'unsupported':
+      return 'Auto-update unavailable';
+    case 'idle':
+    default:
+      return 'Preparing updater';
+  }
+}
+
 export default function App() {
   const [summary, setSummary] = useState<SystemSummary | null>(null);
   const [profile, setProfile] = useState<InstallProfile>(defaultProfile);
@@ -201,6 +265,8 @@ export default function App() {
   });
   const [proxyRunning, setProxyRunning] = useState(false);
   const [proxyResult, setProxyResult] = useState<ProxyResult | null>(null);
+  const [releaseNotice, setReleaseNotice] = useState<JarvisReleaseNotice | null>(null);
+  const [installerUpdate, setInstallerUpdate] = useState<InstallerUpdateState | null>(null);
 
   useEffect(() => {
     terminalIdRef.current = terminalId;
@@ -241,6 +307,43 @@ export default function App() {
         setActivity(`Failed to inspect host environment: ${String(error)}`);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const checkReleaseNotice = async () => {
+      try {
+        const notice = await window.jarvisApi.getReleaseNotice();
+        if (!disposed && notice.hasUpdate) {
+          setReleaseNotice((current) => (current?.releaseTag === notice.releaseTag ? current : notice));
+        }
+      } catch {
+        // Release polling should stay quiet when GitHub is unreachable.
+      }
+    };
+
+    void checkReleaseNotice();
+    const intervalId = window.setInterval(() => {
+      void checkReleaseNotice();
+    }, RELEASE_CHECK_INTERVAL_MS);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    void window.jarvisApi.getInstallerUpdateState().then(setInstallerUpdate).catch(() => {
+      // Keep installer update status quiet if updater initialization is unavailable.
+    });
+
+    const remove = window.jarvisApi.onInstallerUpdate((payload) => {
+      setInstallerUpdate(payload);
+    });
+
+    return remove;
   }, []);
 
   useEffect(() => {
@@ -396,6 +499,10 @@ export default function App() {
       const result = await window.jarvisApi.update(normalizedProfile);
       setLogText(result.output || 'Update completed.');
       setActivity(result.ok ? 'Update completed.' : 'Update failed. Review the output below.');
+      if (result.ok && releaseNotice?.releaseTag) {
+        await window.jarvisApi.acknowledgeRelease(releaseNotice.releaseTag);
+        setReleaseNotice(null);
+      }
       const refreshed = await window.jarvisApi.detectState(normalizedProfile);
       setInstallState(refreshed);
     } catch (error) {
@@ -442,9 +549,50 @@ export default function App() {
     setProxyConfig({ ...proxyConfig, vpsIp: data.ip });
   };
 
+  const dismissReleaseNotice = async () => {
+    if (!releaseNotice?.releaseTag) return;
+    await window.jarvisApi.acknowledgeRelease(releaseNotice.releaseTag);
+    setReleaseNotice(null);
+  };
+
+  const openReleaseNotice = async () => {
+    if (!releaseNotice?.releaseTag) return;
+    await window.jarvisApi.acknowledgeRelease(releaseNotice.releaseTag);
+    await window.jarvisApi.openDashboard(releaseNotice.releaseUrl);
+    setReleaseNotice(null);
+  };
+
+  const releasePublishedLabel = formatReleaseDate(releaseNotice?.publishedAt);
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <>
+      {releaseNotice ? (
+        <div className="modalBackdrop">
+          <div className="modalCard">
+            <p className="cardEyebrow">Upstream release</p>
+            <h2>Jarvis got a new update</h2>
+            <p className="modalLead">
+              A new official Jarvis release is available from <code>vierisid/jarvis</code>.
+            </p>
+            <div className="releaseBadgeRow">
+              <span className="badge warn">{releaseNotice.releaseTag}</span>
+              {releasePublishedLabel ? <span className="badge neutral">{releasePublishedLabel}</span> : null}
+            </div>
+            <div className="callout">
+              <strong>{releaseNotice.releaseName}</strong>
+              <p>{releaseNotice.releaseNotes || 'Open the release page to read the upstream changelog and update when you are ready.'}</p>
+            </div>
+            <div className="buttonRow">
+              <button onClick={() => void openReleaseNotice()}>View release</button>
+              <button className="ghost" onClick={() => void handleUpdate()}>Update now</button>
+              <button className="ghost" onClick={() => void dismissReleaseNotice()}>Dismiss</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="shell">
+        <aside className="sidebar">
         <div className="sidebarLogo">
           <p className="logoEyebrow">Unofficial community build</p>
           <h1>Jarvis Installer</h1>
@@ -481,14 +629,34 @@ export default function App() {
         </div>
 
         <div className="sidebarCard">
+          <p className="cardEyebrow">Installer updates</p>
+          <div className="statusIndicator">
+            <span className={`statusDot ${installerUpdateTone(installerUpdate)}`} />
+            <span className="statusText">{installerUpdateLabel(installerUpdate)}</span>
+          </div>
+          <p className="activityText" style={{ marginTop: '10px' }}>
+            {installerUpdate?.message || 'Checking for newer installer releases...'}
+          </p>
+          <div className="badgeRow" style={{ marginTop: '10px' }}>
+            <span className="badge neutral">Current {installerUpdate?.currentVersion || '—'}</span>
+            {installerUpdate?.latestVersion ? <span className="badge warn">Latest {installerUpdate.latestVersion}</span> : null}
+          </div>
+          {installerUpdate?.status === 'ready' ? (
+            <div className="buttonRow" style={{ marginTop: '12px' }}>
+              <button onClick={() => void window.jarvisApi.applyInstallerUpdate()}>Restart to apply</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="sidebarCard">
           <p className="cardEyebrow">Notes</p>
           <div className="noticeList">
             {runtimeNotes.length ? runtimeNotes.map((note) => <p className="noteItem" key={note}>{note}</p>) : <p className="noteItem muted">No host warnings.</p>}
           </div>
         </div>
-      </aside>
+        </aside>
 
-      <main className="main">
+        <main className="main">
         <div className="sectionLabel">§ INSTALL</div>
         <section className="panel">
           <div className="panelHeader">
@@ -722,7 +890,8 @@ export default function App() {
             </div>
           )}
         </section>
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }

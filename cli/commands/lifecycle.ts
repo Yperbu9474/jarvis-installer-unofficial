@@ -1,4 +1,4 @@
-import { error, log, ok, run, runLive, loadProfile } from '../utils';
+import { error, log, ok, run, runLive, loadProfile, getDockerCommand, shellEscape } from '../utils';
 
 export async function runLifecycle(action: string, _args: string[]): Promise<void> {
   const profile = loadProfile();
@@ -10,34 +10,38 @@ export async function runLifecycle(action: string, _args: string[]): Promise<voi
   const { mode, containerName = 'jarvis-daemon' } = profile;
 
   if (mode === 'docker') {
+    const dockerCommand = await getDockerCommand();
+
     switch (action) {
       case 'start': {
         log(`Starting Docker container ${containerName}...`);
-        const result = await run(`docker start ${containerName}`);
+        const result = await run(`${dockerCommand} start ${shellEscape(containerName)}`);
         if (result.ok) { ok('Started.'); } else { error(result.output); process.exit(1); }
         break;
       }
       case 'stop': {
         log(`Stopping Docker container ${containerName}...`);
-        const result = await run(`docker stop ${containerName}`);
+        const result = await run(`${dockerCommand} stop ${shellEscape(containerName)}`);
         if (result.ok) { ok('Stopped.'); } else { error(result.output); process.exit(1); }
         break;
       }
       case 'restart': {
         log(`Restarting Docker container ${containerName}...`);
-        const result = await run(`docker restart ${containerName}`);
+        const result = await run(`${dockerCommand} restart ${shellEscape(containerName)}`);
         if (result.ok) { ok('Restarted.'); } else { error(result.output); process.exit(1); }
         break;
       }
       case 'status': {
         log('Container status:');
-        const result = await run(`docker ps -f name=${containerName} --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"`);
+        const result = await run(
+          `${dockerCommand} ps -f ${shellEscape(`name=${containerName}`)} --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"`
+        );
         console.log(result.output);
         break;
       }
       case 'logs': {
         log(`Streaming logs for ${containerName}...`);
-        await runLive(`docker logs -f ${containerName}`);
+        await runLive(`${dockerCommand} logs -f ${shellEscape(containerName)}`);
         break;
       }
     }

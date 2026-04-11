@@ -25,7 +25,9 @@ It gives you:
 
 - a normal desktop installer
 - a setup screen that asks you what kind of install you want
-- automatic checks for missing tools like Bun or Docker
+- automatic checks for missing tools like Bun or Docker, with Docker auto-install during CLI Docker setup on supported Linux and macOS systems
+- a release popup when the official `vierisid/jarvis` repo publishes a new GitHub release
+- sidebar-based installer self-updates that auto-download newer packaged releases and apply them on restart where the platform build supports it
 - buttons to start, stop, and restart Jarvis
 - a logs screen so you can see what Jarvis is doing
 - a quick link to the Jarvis dashboard

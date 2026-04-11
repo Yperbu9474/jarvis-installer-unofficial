@@ -88,6 +88,158 @@ function bashQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+export function dockerShellPreamble(): string {
+  return `
+set -euo pipefail
+find_docker_bin() {
+  if command -v docker >/dev/null 2>&1; then
+    command -v docker
+    return 0
+  fi
+
+  for candidate in /usr/local/bin/docker /opt/homebrew/bin/docker /usr/bin/docker; do
+    if [ -x "$candidate" ]; then
+      printf '%s\\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+try_docker_host() {
+  local host="$1"
+
+  if [ -n "$host" ]; then
+    local socket_path="$host"
+    if [ "$host" != "\${host#unix://}" ]; then
+      socket_path="\${host#unix://}"
+      if [ ! -S "$socket_path" ]; then
+        return 1
+      fi
+    fi
+    DOCKER_HOST="$host" "$JARVIS_DOCKER_BIN" info >/dev/null 2>&1
+    return $?
+  fi
+
+  "$JARVIS_DOCKER_BIN" info >/dev/null 2>&1
+}
+
+JARVIS_DOCKER_BIN="$(find_docker_bin || true)"
+if [ -z "$JARVIS_DOCKER_BIN" ]; then
+  echo "Docker CLI not found. Install Docker Desktop or Docker Engine first." >&2
+  exit 1
+fi
+export JARVIS_DOCKER_BIN
+
+if ! try_docker_host "\${DOCKER_HOST:-}"; then
+  for host in \
+    "unix://$HOME/.docker/run/docker.sock" \
+    "unix://$HOME/.docker/desktop/docker.sock" \
+    "\${XDG_RUNTIME_DIR:+unix://$XDG_RUNTIME_DIR/docker.sock}" \
+    "unix:///var/run/docker.sock"
+  do
+    [ -n "$host" ] || continue
+    if try_docker_host "$host"; then
+      export DOCKER_HOST="$host"
+      break
+    fi
+  done
+fi
+
+if ! try_docker_host "\${DOCKER_HOST:-}"; then
+  echo "Failed to connect to the Docker API. Checked the Docker CLI and common socket locations." >&2
+  exit 1
+fi
+
+docker_cmd() {
+  "$JARVIS_DOCKER_BIN" "$@"
+}
+`;
+}
+
+export function dockerPowerShellPreamble(): string {
+  return `
+$ErrorActionPreference = 'Stop'
+function Find-DockerCommand {
+  $candidates = @()
+  $existing = Get-Command docker -ErrorAction SilentlyContinue
+  if ($existing) {
+    $candidates += $existing.Source
+  }
+  $candidates += @(
+    "$Env:ProgramFiles\\Docker\\Docker\\resources\\bin\\docker.exe",
+    "$Env:ProgramFiles\\Docker\\cli-plugins\\docker.exe",
+    "$Env:LocalAppData\\Programs\\Docker\\Docker\\resources\\bin\\docker.exe"
+  )
+
+  foreach ($candidate in $candidates | Where-Object { $_ } | Select-Object -Unique) {
+    if (Test-Path $candidate) {
+      return $candidate
+    }
+  }
+
+  throw 'Docker CLI not found. Install Docker Desktop or Docker Engine first.'
+}
+
+function Test-DockerEndpoint([string]$HostValue) {
+  $hadOriginal = Test-Path Env:DOCKER_HOST
+  $original = $env:DOCKER_HOST
+
+  try {
+    if ($HostValue) {
+      $env:DOCKER_HOST = $HostValue
+    } elseif ($hadOriginal) {
+      Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+    }
+
+    & $script:JarvisDockerCommand info *> $null
+    return $LASTEXITCODE -eq 0
+  } finally {
+    if ($hadOriginal) {
+      $env:DOCKER_HOST = $original
+    } else {
+      Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+$script:JarvisDockerCommand = Find-DockerCommand
+$resolved = $false
+$candidates = @()
+if ($env:DOCKER_HOST) {
+  $candidates += $env:DOCKER_HOST
+}
+$candidates += 'npipe:////./pipe/docker_engine'
+
+foreach ($candidate in $candidates | Where-Object { $_ } | Select-Object -Unique) {
+  if (Test-DockerEndpoint $candidate) {
+    if ($candidate) {
+      $env:DOCKER_HOST = $candidate
+    } else {
+      Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+    }
+    $resolved = $true
+    break
+  }
+}
+
+if (-not $resolved -and Test-DockerEndpoint '') {
+  Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+  $resolved = $true
+}
+
+if (-not $resolved) {
+  throw 'Failed to connect to the Docker API. Checked docker.exe and the default Docker Desktop pipe.'
+}
+
+function docker_cmd {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+  & $script:JarvisDockerCommand @Arguments
+}
+`;
+}
+
 export function buildTerminalLaunch(
   profile: InstallProfile,
   purpose: 'onboard' | 'shell',
@@ -148,11 +300,12 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     const quotedName = os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
     const dockerCommand =
       action === 'status'
-        ? `docker ps -a --filter "name=${containerName}" --format "{{.Status}}" || docker inspect ${quotedName} --format "{{.State.Status}}"`
+        ? `docker_cmd ps -a --filter "name=${containerName}" --format "{{.Status}}" || docker_cmd inspect ${quotedName} --format "{{.State.Status}}"`
         : action === 'logs'
-          ? `docker logs --tail 200 ${quotedName}`
-          : `docker ${action} ${quotedName}`;
-    const result = await runProfileCommand(profile, dockerCommand);
+          ? `docker_cmd logs --tail 200 ${quotedName}`
+          : `docker_cmd ${action} ${quotedName}`;
+    const dockerScript = `${os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble()}\n${dockerCommand}`;
+    const result = await runProfileCommand(profile, dockerScript);
     return {
       ok: result.ok,
       action,
@@ -184,8 +337,8 @@ export async function detectInstallState(profile: InstallProfile): Promise<Insta
     const result = await runProfileCommand(
       profile,
       os.platform() === 'win32'
-        ? `$name="${containerName}"; docker inspect $name --format "{{.State.Status}}" 2>$null`
-        : `docker inspect '${containerName.replace(/'/g, `'\\''`)}' --format "{{.State.Status}}" 2>/dev/null`,
+        ? `${dockerPowerShellPreamble()}\n$name="${containerName}"; docker_cmd inspect $name --format "{{.State.Status}}" 2>$null`
+        : `${dockerShellPreamble()}\ndocker_cmd inspect '${containerName.replace(/'/g, `'\\''`)}' --format "{{.State.Status}}" 2>/dev/null`,
     );
     const status = `${result.stdout}${result.stderr}`.trim().toLowerCase();
     return {

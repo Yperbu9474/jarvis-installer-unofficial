@@ -63,6 +63,113 @@ export async function runLive(cmd: string): Promise<boolean> {
   });
 }
 
+export function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export async function hasCommand(command: string): Promise<boolean> {
+  const result = await run(`command -v ${command} >/dev/null 2>&1`);
+  return result.ok;
+}
+
+async function ensureDockerInstalled(): Promise<void> {
+  if (await hasCommand('docker')) {
+    return;
+  }
+
+  log('Docker not found. Attempting automatic installation...');
+
+  if (process.platform === 'linux') {
+    if (!(await hasCommand('apt-get'))) {
+      error('Docker is required but this Linux distro is not supported for automatic installation. Please install Docker manually and rerun `jarv install`.');
+      process.exit(1);
+    }
+
+    const installed = await runLive('sudo apt-get update -y && sudo apt-get install -y docker.io');
+    if (!installed) {
+      error('Failed to install Docker with apt-get.');
+      process.exit(1);
+    }
+
+    if (await hasCommand('systemctl')) {
+      const started = await runLive('sudo systemctl enable --now docker');
+      if (!started) {
+        warn('Docker was installed, but the Docker service could not be started automatically.');
+      }
+    }
+  } else if (process.platform === 'darwin') {
+    if (!(await hasCommand('brew'))) {
+      error('Docker is required but Homebrew is not installed. Install Docker Desktop manually, open it once, and rerun `jarv install`.');
+      process.exit(1);
+    }
+
+    const installed = await runLive('brew install --cask docker');
+    if (!installed) {
+      error('Failed to install Docker Desktop with Homebrew.');
+      process.exit(1);
+    }
+
+    warn('Docker Desktop may need to be opened once before the Docker daemon becomes available.');
+  } else {
+    error('Docker is required on this platform, but automatic installation is not supported here.');
+    process.exit(1);
+  }
+
+  if (!(await hasCommand('docker'))) {
+    error('Docker installation finished, but the `docker` command is still unavailable.');
+    process.exit(1);
+  }
+}
+
+async function ensureDockerDaemonReady(dockerCommand: string): Promise<void> {
+  const ready = await run(`${dockerCommand} info >/dev/null 2>&1`);
+  if (ready.ok) {
+    return;
+  }
+
+  if (process.platform === 'linux' && await hasCommand('systemctl')) {
+    log('Starting Docker service...');
+    const started = await runLive('sudo systemctl enable --now docker');
+    if (started) {
+      const retry = await run(`${dockerCommand} info >/dev/null 2>&1`);
+      if (retry.ok) {
+        return;
+      }
+    }
+  }
+
+  if (process.platform === 'darwin') {
+    error('Docker is installed, but the daemon is not running. Open Docker Desktop and rerun the command.');
+  } else {
+    error('Docker is installed, but it is not ready yet. Make sure the Docker service is running and rerun the command.');
+  }
+  process.exit(1);
+}
+
+export async function getDockerCommand(): Promise<string> {
+  await ensureDockerInstalled();
+
+  const direct = await run('docker info 2>&1');
+  if (direct.ok) {
+    return 'docker';
+  }
+
+  const permissionDenied = /permission denied/i.test(direct.output);
+  const dockerCommand = permissionDenied ? 'sudo docker' : 'docker';
+
+  if (permissionDenied) {
+    warn('Docker requires elevated privileges in this shell. Using sudo for Docker commands.');
+    const sudoReady = await runLive('sudo -v');
+    if (!sudoReady) {
+      error('Unable to acquire sudo privileges for Docker commands.');
+      process.exit(1);
+    }
+  }
+
+  await ensureDockerDaemonReady(dockerCommand);
+  return dockerCommand;
+}
+
 export async function ask(question: string, defaultVal?: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const prompt = defaultVal ? `${question} [${defaultVal}]: ` : `${question}: `;

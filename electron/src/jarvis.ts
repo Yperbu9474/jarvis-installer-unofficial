@@ -3,7 +3,14 @@ import path from 'node:path';
 import os from 'node:os';
 import { app } from 'electron';
 import type { InstallProfile, InstallResult, InstallState, LifecycleAction, LifecycleResult, SystemSummary, UpdateResult } from '../../src/lib/types';
-import { detectInstallState, lifecycle, loadSystemSummary, runProfileCommand } from './runtime';
+import {
+  detectInstallState,
+  dockerPowerShellPreamble,
+  dockerShellPreamble,
+  lifecycle,
+  loadSystemSummary,
+  runProfileCommand,
+} from './runtime';
 
 const PROFILE_PATH = () => path.join(app.getPath('userData'), 'profile.json');
 
@@ -81,22 +88,20 @@ fi
 function dockerBootstrapScript() {
   return `
 set -euo pipefail
-if ! command -v docker >/dev/null 2>&1; then
+if ! command -v docker >/dev/null 2>&1 && [ ! -x /usr/local/bin/docker ] && [ ! -x /opt/homebrew/bin/docker ] && [ ! -x /usr/bin/docker ]; then
   curl -fsSL https://get.docker.com | sh
 fi
 if command -v systemctl >/dev/null 2>&1; then
   sudo systemctl enable docker || true
   sudo systemctl start docker || true
 fi
+${dockerShellPreamble()}
 `;
 }
 
 function dockerBootstrapScriptWindows() {
   return `
-$ErrorActionPreference = 'Stop'
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-  throw 'Docker is not installed. Install Docker Desktop or Docker Engine first, then rerun the installer.'
-}
+${dockerPowerShellPreamble()}
 `;
 }
 
@@ -114,18 +119,18 @@ $dataDir = ${pwshQuote(dataDir)}
 $containerName = ${pwshQuote(containerName)}
 $port = ${port}
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-docker pull ghcr.io/vierisid/jarvis:latest
-try { docker rm -f $containerName 2>$null | Out-Null } catch { }
-docker run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest
+docker_cmd pull ghcr.io/vierisid/jarvis:latest
+try { docker_cmd rm -f $containerName 2>$null | Out-Null } catch { }
+docker_cmd run -d --name $containerName --restart unless-stopped -p "$port:3142" -v "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest
 `;
     }
 
     return `
 ${dockerBootstrapScript()}
 mkdir -p ${bashQuote(dataDir)}
-docker pull ghcr.io/vierisid/jarvis:latest
-docker rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
-docker run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest
+docker_cmd pull ghcr.io/vierisid/jarvis:latest
+docker_cmd rm -f ${bashQuote(containerName)} >/dev/null 2>&1 || true
+docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest
 `;
   }
 
@@ -217,14 +222,16 @@ function buildUpdateScript(profile: InstallProfile): string {
   if (profile.mode === 'docker') {
     if (os.platform() === 'win32') {
       return `
+${dockerPowerShellPreamble()}
 $containerName = ${pwshQuote(containerName)}
-docker pull ghcr.io/vierisid/jarvis:latest
-docker restart $containerName
+docker_cmd pull ghcr.io/vierisid/jarvis:latest
+docker_cmd restart $containerName
 `;
     }
     return `
-docker pull ghcr.io/vierisid/jarvis:latest
-docker restart ${bashQuote(containerName)}
+${dockerShellPreamble()}
+docker_cmd pull ghcr.io/vierisid/jarvis:latest
+docker_cmd restart ${bashQuote(containerName)}
 `;
   }
 

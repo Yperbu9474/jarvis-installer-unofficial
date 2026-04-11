@@ -10,14 +10,15 @@ async function runUpdate(_args) {
     }
     const { mode, containerName = 'jarvis-daemon' } = profile;
     if (mode === 'docker') {
+        const dockerCommand = await (0, utils_1.getDockerCommand)();
         (0, utils_1.log)('Pulling latest Jarvis Docker image...');
-        const pull = await (0, utils_1.runLive)('docker pull ghcr.io/vierisid/jarvis:latest');
+        const pull = await (0, utils_1.runLive)(`${dockerCommand} pull ghcr.io/vierisid/jarvis:latest`);
         if (!pull) {
             (0, utils_1.error)('Failed to pull latest image.');
             process.exit(1);
         }
         (0, utils_1.log)(`Restarting container ${containerName}...`);
-        const restart = await (0, utils_1.runLive)(`docker restart ${containerName}`);
+        const restart = await (0, utils_1.runLive)(`${dockerCommand} restart ${(0, utils_1.shellEscape)(containerName)}`);
         if (!restart) {
             (0, utils_1.error)('Failed to restart container.');
             process.exit(1);

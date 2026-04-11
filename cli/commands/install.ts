@@ -12,9 +12,10 @@ import {
   runLive,
   CONFIG_DIR,
   CONFIG_PATH,
-  PROFILE_PATH,
   saveProfile,
   c,
+  getDockerCommand,
+  shellEscape,
 } from '../utils';
 
 function parseArgs(args: string[]): Record<string, string | boolean> {
@@ -82,19 +83,22 @@ export async function runInstall(args: string[]): Promise<void> {
     return;
   }
 
-  const TOTAL = mode === 'docker' ? 3 : 5;
+  const TOTAL = mode === 'docker' ? 4 : 5;
 
   if (mode === 'docker') {
-    step(1, TOTAL, 'Pulling Jarvis Docker image...');
-    const pull = await runLive('docker pull ghcr.io/vierisid/jarvis:latest');
+    step(1, TOTAL, 'Checking Docker...');
+    const dockerCommand = await getDockerCommand();
+
+    step(2, TOTAL, 'Pulling Jarvis Docker image...');
+    const pull = await runLive(`${dockerCommand} pull ghcr.io/vierisid/jarvis:latest`);
     if (!pull) { error('Failed to pull Docker image.'); process.exit(1); }
 
-    step(2, TOTAL, 'Removing existing container (if any)...');
-    await run(`docker rm -f ${containerName} 2>/dev/null || true`);
+    step(3, TOTAL, 'Removing existing container (if any)...');
+    await run(`${dockerCommand} rm -f ${shellEscape(containerName)} 2>/dev/null || true`);
 
-    step(3, TOTAL, `Starting container on port ${port}...`);
+    step(4, TOTAL, `Starting container on port ${port}...`);
     const started = await runLive(
-      `docker run -d --name ${containerName} -p ${port}:3142 -v ${dataDir}:/app/data ghcr.io/vierisid/jarvis:latest`
+      `${dockerCommand} run -d --name ${shellEscape(containerName)} -p ${port}:3142 -v ${shellEscape(dataDir)}:/app/data ghcr.io/vierisid/jarvis:latest`
     );
     if (!started) { error('Failed to start container.'); process.exit(1); }
   } else {

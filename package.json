@@ -1,6 +1,6 @@
 {
   "name": "jarvis-installer-unofficial",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Unofficial cross-platform installer and control panel for Jarvis",
   "main": "dist-electron/main.js",
@@ -66,17 +66,26 @@
       "category": "Development",
       "maintainer": "Codex <codex@example.com>"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Yperbu9474",
+        "repo": "jarvis-installer-unofficial"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
+    },
+    "electronUpdaterCompatibility": ">=2.16"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "electron-log": "^5.2.4",
+    "electron-updater": "^6.8.3",
     "node-pty": "^1.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

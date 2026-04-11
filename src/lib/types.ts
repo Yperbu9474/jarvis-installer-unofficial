@@ -65,3 +65,20 @@ export type ProxyResult = {
   output: string;
   url?: string;
 };
+
+export type JarvisReleaseNotice = {
+  hasUpdate: boolean;
+  releaseTag: string;
+  releaseName: string;
+  releaseUrl: string;
+  publishedAt?: string;
+  releaseNotes?: string;
+};
+
+export type InstallerUpdateState = {
+  status: 'idle' | 'checking' | 'downloading' | 'ready' | 'up-to-date' | 'error' | 'unsupported';
+  currentVersion: string;
+  latestVersion?: string;
+  progress?: number;
+  message: string;
+};
