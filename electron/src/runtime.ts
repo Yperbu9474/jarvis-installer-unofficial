@@ -476,11 +476,23 @@ function docker_cmd {
 `;
 }
 
+function withOptionalSudoShim(command: string): string {
+  return [
+    'if ! command -v sudo >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then',
+    '  mkdir -p /tmp/jarvis-installer-bin;',
+    '  printf \'#!/bin/sh\\nexec "$@"\\n\' > /tmp/jarvis-installer-bin/sudo;',
+    '  chmod +x /tmp/jarvis-installer-bin/sudo;',
+    '  export PATH="/tmp/jarvis-installer-bin:$PATH";',
+    'fi;',
+    command,
+  ].join(' ');
+}
+
 export async function buildTerminalLaunch(
   profile: InstallProfile,
   purpose: 'onboard' | 'shell',
 ): Promise<{ shell: string; args: string[]; env?: NodeJS.ProcessEnv }> {
-  const jarvisCommand = purpose === 'onboard' ? 'jarvis onboard' : 'jarvis help';
+  const jarvisCommand = purpose === 'onboard' ? withOptionalSudoShim('jarvis onboard') : 'jarvis help';
 
   if (profile.mode === 'docker') {
     const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
