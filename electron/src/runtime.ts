@@ -481,7 +481,7 @@ export async function loadSystemSummary(): Promise<SystemSummary> {
 
 export async function lifecycle(profile: InstallProfile, action: LifecycleAction): Promise<LifecycleResult> {
   const port = normalizePort(profile.port);
-  const dashboardUrl = `http://localhost:${port}`;
+  const dashboardUrl = `http://127.0.0.1:${port}`;
 
   if (profile.mode === 'docker') {
     const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
@@ -578,7 +578,7 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
 }
 
 export async function detectInstallState(profile: InstallProfile): Promise<InstallState> {
-  const dashboardUrl = `http://localhost:${normalizePort(profile.port)}`;
+  const dashboardUrl = `http://127.0.0.1:${normalizePort(profile.port)}`;
 
   if (profile.mode === 'docker') {
     const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();

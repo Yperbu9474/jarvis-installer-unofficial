@@ -186,7 +186,7 @@ async function detectBestState(profile: InstallProfile, summary: SystemSummary |
       running: false,
       mode: fallback.mode,
       details: 'Jarvis install not detected.',
-      dashboardUrl: `http://localhost:${fallback.port || 3142}`,
+      dashboardUrl: `http://127.0.0.1:${fallback.port || 3142}`,
     },
   };
 }
@@ -406,7 +406,7 @@ export default function App() {
   const validationErrors = useMemo(() => getValidationErrors(normalizedProfile, summary), [normalizedProfile, summary]);
   const runtimeNotes = useMemo(() => getRuntimeNotes(normalizedProfile, summary), [normalizedProfile, summary]);
   const isProfileValid = validationErrors.length === 0;
-  const dashboardUrl = `http://localhost:${normalizedProfile.port || 3142}`;
+  const dashboardUrl = installState?.dashboardUrl || `http://127.0.0.1:${normalizedProfile.port || 3142}`;
 
   const modeOptions = useMemo(
     () =>

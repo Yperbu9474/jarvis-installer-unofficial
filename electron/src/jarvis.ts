@@ -731,7 +731,7 @@ export async function installJarvis(
   return {
     ok: installOk,
     output: installOutput,
-    dashboardUrl: `http://localhost:${normalizePort(profile.port)}`,
+    dashboardUrl: `http://127.0.0.1:${normalizePort(profile.port)}`,
   };
 }
 
