@@ -24,18 +24,25 @@ jobs:
             artifact_glob: |
               release/*.AppImage
               release/*.deb
+              release/latest*.yml
+              release/*.blockmap
           - os: windows-latest
             label: Windows
             npm_script: dist:win
             artifact_name: jarvis-installer-windows
             artifact_glob: |
               release/*.exe
+              release/latest*.yml
+              release/*.blockmap
           - os: macos-latest
             label: macOS
             npm_script: dist:mac
             artifact_name: jarvis-installer-macos
             artifact_glob: |
               release/*.dmg
+              release/*.zip
+              release/latest*.yml
+              release/*.blockmap
 
     steps:
       - name: Checkout
@@ -47,6 +54,23 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Setup Python
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Export Python for node-gyp
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_ENV -Value "PYTHON=${{ steps.setup-python.outputs.python-path }}"
+          Add-Content -Path $env:GITHUB_ENV -Value "npm_config_python=${{ steps.setup-python.outputs.python-path }}"
+
+      - name: Verify Python
+        shell: pwsh
+        run: |
+          python --version
+          & "${{ steps.setup-python.outputs.python-path }}" --version
       - name: Install dependencies
         run: npm ci
 
@@ -87,3 +111,6 @@ jobs:
             release-artifacts/**/*.deb
             release-artifacts/**/*.exe
             release-artifacts/**/*.dmg
+            release-artifacts/**/*.zip
+            release-artifacts/**/latest*.yml
+            release-artifacts/**/*.blockmap
