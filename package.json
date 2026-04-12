@@ -1,6 +1,6 @@
 {
   "name": "jarvis-installer-unofficial",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "private": true,
   "description": "Unofficial cross-platform installer and control panel for Jarvis",
   "main": "dist-electron/main.js",
