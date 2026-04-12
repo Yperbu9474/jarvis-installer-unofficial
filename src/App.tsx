@@ -258,6 +258,7 @@ export default function App() {
   // Ref so stale closures inside xterm callbacks can always read the live terminalId
   const terminalIdRef = useRef<string | null>(null);
   const lastTerminalPasteAtRef = useRef(0);
+  const lastTerminalPasteTextRef = useRef('');
   const [proxyConfig, setProxyConfig] = useState<ProxyConfig>({
     domain: '',
     cfApiToken: '',
@@ -443,13 +444,17 @@ export default function App() {
     if (!id) return;
 
     try {
-      const now = Date.now();
-      if (source === 'paste' && now - lastTerminalPasteAtRef.current < 250) {
-        return;
-      }
       const clipboardText = text ?? await navigator.clipboard.readText();
       if (!clipboardText) return;
+      const now = Date.now();
+      const isDuplicatePaste =
+        clipboardText === lastTerminalPasteTextRef.current
+        && now - lastTerminalPasteAtRef.current < 750;
+      if (isDuplicatePaste) {
+        return;
+      }
       lastTerminalPasteAtRef.current = now;
+      lastTerminalPasteTextRef.current = clipboardText;
       await window.jarvisApi.terminalWrite(id, clipboardText);
       terminalRef.current?.focus();
     } catch {
