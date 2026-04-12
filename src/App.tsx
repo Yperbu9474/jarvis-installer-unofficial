@@ -257,6 +257,7 @@ export default function App() {
   const fitRef = useRef<FitAddon | null>(null);
   // Ref so stale closures inside xterm callbacks can always read the live terminalId
   const terminalIdRef = useRef<string | null>(null);
+  const lastTerminalPasteAtRef = useRef(0);
   const [proxyConfig, setProxyConfig] = useState<ProxyConfig>({
     domain: '',
     cfApiToken: '',
@@ -391,7 +392,7 @@ export default function App() {
         ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'v')
         || (event.shiftKey && event.key === 'Insert');
       if (event.type === 'keydown' && isPasteShortcut) {
-        void pasteTerminalClipboard();
+        void pasteTerminalClipboard(undefined, 'shortcut');
         return false;
       }
       return true;
@@ -437,13 +438,18 @@ export default function App() {
     [summary],
   );
 
-  async function pasteTerminalClipboard(text?: string) {
+  async function pasteTerminalClipboard(text?: string, source: 'shortcut' | 'paste' = 'shortcut') {
     const id = terminalIdRef.current;
     if (!id) return;
 
     try {
+      const now = Date.now();
+      if (source === 'paste' && now - lastTerminalPasteAtRef.current < 250) {
+        return;
+      }
       const clipboardText = text ?? await navigator.clipboard.readText();
       if (!clipboardText) return;
+      lastTerminalPasteAtRef.current = now;
       await window.jarvisApi.terminalWrite(id, clipboardText);
       terminalRef.current?.focus();
     } catch {
@@ -924,7 +930,7 @@ export default function App() {
             onClick={() => terminalRef.current?.focus()}
             onPaste={(event) => {
               event.preventDefault();
-              void pasteTerminalClipboard(event.clipboardData.getData('text'));
+              void pasteTerminalClipboard(event.clipboardData.getData('text'), 'paste');
             }}
           />
         </section>
