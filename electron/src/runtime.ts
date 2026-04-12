@@ -526,7 +526,7 @@ export async function buildTerminalLaunch(
           '-Command',
           `${dockerPreamble}\n` +
           (resolved.adopted ? `Write-Host ${dockerQuotedName(`Using detected Docker container ${containerName} instead of ${resolved.requestedName}.`)}\n` : '') +
-          `docker_cmd exec -it ${dockerQuotedName(containerName)} sh -lc ${dockerQuotedName(jarvisCommand)}`,
+          `docker_cmd exec -it ${pwshQuote(containerName)} sh -lc ${pwshQuote(jarvisCommand)}`,
         ],
       };
     }
