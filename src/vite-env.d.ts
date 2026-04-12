@@ -30,7 +30,7 @@ declare global {
       acknowledgeRelease: (releaseTag: string) => Promise<{ ok: true }>;
       getInstallerUpdateState: () => Promise<InstallerUpdateState>;
       applyInstallerUpdate: () => Promise<{ ok: true }>;
-      terminalCreate: (payload: { profile: InstallProfile; purpose: 'onboard' | 'shell' }) => Promise<{ id: string }>;
+      terminalCreate: (payload: { profile: InstallProfile; purpose: 'onboard' | 'shell'; cols?: number; rows?: number }) => Promise<{ id: string }>;
       terminalWrite: (id: string, data: string) => Promise<{ ok: true }>;
       terminalResize: (id: string, cols: number, rows: number) => Promise<{ ok: true }>;
       terminalClose: (id: string) => Promise<{ ok: true }>;

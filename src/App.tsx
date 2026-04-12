@@ -378,17 +378,26 @@ export default function App() {
       },
       fontFamily: '"JetBrains Mono", "SFMono-Regular", monospace',
       fontSize: 13,
+      cursorBlink: true,
+      scrollback: 2000,
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(terminalMount.current);
     fitAddon.fit();
+    terminal.focus();
     terminal.onData((data) => {
       const id = terminalIdRef.current;
       if (id) void window.jarvisApi.terminalWrite(id, data);
     });
     terminalRef.current = terminal;
     fitRef.current = fitAddon;
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit();
+      const id = terminalIdRef.current;
+      if (id) void window.jarvisApi.terminalResize(id, terminal.cols, terminal.rows);
+    });
+    resizeObserver.observe(terminalMount.current);
     const onResize = () => {
       fitAddon.fit();
       const id = terminalIdRef.current;
@@ -396,6 +405,7 @@ export default function App() {
     };
     window.addEventListener('resize', onResize);
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener('resize', onResize);
       terminal.dispose();
       terminalRef.current = null;
@@ -546,13 +556,17 @@ export default function App() {
         setTerminalId(null);
         terminalRef.current?.clear();
       }
-      const session = await window.jarvisApi.terminalCreate({ profile: normalizedProfile, purpose: 'onboard' });
+      fitRef.current?.fit();
+      const cols = Math.max(terminalRef.current?.cols ?? 120, 80);
+      const rows = Math.max(terminalRef.current?.rows ?? 32, 24);
+      const session = await window.jarvisApi.terminalCreate({ profile: normalizedProfile, purpose: 'onboard', cols, rows });
       setTerminalId(session.id);
       setActivity('Jarvis onboarding is running in the embedded terminal below.');
       setTimeout(() => {
         fitRef.current?.fit();
         if (terminalRef.current) {
           void window.jarvisApi.terminalResize(session.id, terminalRef.current.cols, terminalRef.current.rows);
+          terminalRef.current.focus();
         }
       }, 50);
     } catch (error) {
@@ -880,7 +894,7 @@ export default function App() {
               </button>
             ) : null}
           </div>
-          <div className="terminalMount" ref={terminalMount} />
+          <div className="terminalMount" ref={terminalMount} onClick={() => terminalRef.current?.focus()} />
         </section>
 
         <div className="sectionLabel">§ REVERSE PROXY</div>

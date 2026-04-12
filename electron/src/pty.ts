@@ -9,16 +9,18 @@ type OnData = (data: string) => void;
 export const terminalSessions = new Map<string, pty.IPty>();
 
 export async function createTerminal(
-  payload: { profile: InstallProfile; purpose: 'onboard' | 'shell' },
+  payload: { profile: InstallProfile; purpose: 'onboard' | 'shell'; cols?: number; rows?: number },
   onData: OnData,
 ): Promise<string> {
   const id = crypto.randomUUID();
   const launch = await buildTerminalLaunch(payload.profile, payload.purpose);
+  const cols = Number.isFinite(payload.cols) && Number(payload.cols) > 0 ? Math.floor(Number(payload.cols)) : 120;
+  const rows = Number.isFinite(payload.rows) && Number(payload.rows) > 0 ? Math.floor(Number(payload.rows)) : 32;
   const shell = launch.shell ?? (os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash');
   const term = pty.spawn(shell, launch.args, {
     name: 'xterm-color',
-    cols: 120,
-    rows: 32,
+    cols,
+    rows,
     cwd: os.homedir(),
     env: { ...process.env, ...(launch.env || {}) },
   });

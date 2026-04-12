@@ -596,14 +596,16 @@ button.busy::after {
 
 /* ── Terminal ────────────────────────────────────────────────── */
 .terminalPanel {
-  min-height: 340px;
+  min-height: 420px;
 }
 
 .terminalMount {
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--line);
-  min-height: 300px;
+  min-height: 380px;
+  background: #07111f;
+  cursor: text;
 }
 
 /* ── Responsive ──────────────────────────────────────────────── */
