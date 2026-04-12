@@ -27,6 +27,7 @@
     "build:all": "npm run build && npm run build:cli"
   },
   "build": {
+    "afterPack": "./scripts/after-pack.js",
     "appId": "dev.usejarvis.installer.unofficial",
     "productName": "Jarvis Installer",
     "artifactName": "Jarvis-Installer-${version}-${ext}",
@@ -59,6 +60,7 @@
     },
     "linux": {
       "artifactName": "Jarvis-Installer-Linux-${version}.${ext}",
+      "executableName": "jarvis-installer-unofficial",
       "target": [
         "AppImage",
         "deb"
