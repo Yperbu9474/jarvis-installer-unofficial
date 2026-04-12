@@ -692,6 +692,7 @@ export async function installJarvis(
 
   if (result.ok) {
     let profileToSave = effectiveProfile;
+    let dashboardUrl = `http://127.0.0.1:${normalizePort(profile.port)}`;
     if (os.platform() === 'win32' && effectiveProfile.mode === 'wsl2') {
       const combinedOutput = `${result.stdout}\n${result.stderr}`;
       const matchedDistro = combinedOutput.match(/JARVIS_WSL_DISTRO=([^\r\n]+)/);
@@ -709,6 +710,7 @@ export async function installJarvis(
     if (profileToSave.mode === 'docker') {
       notifyProgress?.({ percent: 98, message: 'Verifying Docker container' });
       let dockerState = await detectInstallState(profileToSave);
+      dashboardUrl = dockerState.dashboardUrl;
 
       if (!dockerState.installed) {
         const repaired = await lifecycle(profileToSave, 'start');
@@ -717,6 +719,7 @@ export async function installJarvis(
           installOutput = installOutput ? `${installOutput}\n${repairedOutput}` : repairedOutput;
         }
         dockerState = await detectInstallState(profileToSave);
+        dashboardUrl = dockerState.dashboardUrl;
       }
 
       if (!dockerState.installed) {
@@ -725,6 +728,13 @@ export async function installJarvis(
         installOutput = installOutput ? `${installOutput}\n${failureMessage}` : failureMessage;
       }
     }
+
+    progress.finish(installOk);
+    return {
+      ok: installOk,
+      output: installOutput,
+      dashboardUrl,
+    };
   }
 
   progress.finish(installOk);

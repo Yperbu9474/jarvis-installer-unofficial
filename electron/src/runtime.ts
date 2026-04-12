@@ -150,6 +150,14 @@ function buildDockerInspectCommand(containerName: string): string {
   return `docker_cmd inspect ${dockerQuotedName(containerName)} --format "{{.State.Status}}"`;
 }
 
+function buildDockerPortsCommand(containerName: string): string {
+  return `docker_cmd inspect ${dockerQuotedName(containerName)} --format "{{json .NetworkSettings.Ports}}"`;
+}
+
+function buildDockerContainerIpCommand(containerName: string): string {
+  return `docker_cmd inspect ${dockerQuotedName(containerName)} --format "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"`;
+}
+
 function buildDockerRunCommand(profile: InstallProfile): string {
   const port = normalizePort(profile.port);
   const containerName = profile.containerName || 'jarvis-daemon';
@@ -229,6 +237,38 @@ async function resolveDockerContainer(
     actualName: candidate?.name || null,
     adopted: Boolean(candidate && candidate.name !== requestedName),
   };
+}
+
+async function resolveDockerDashboardUrl(
+  profile: InstallProfile,
+  dockerPreamble: string,
+  containerName?: string | null,
+): Promise<string> {
+  const fallbackUrl = `http://127.0.0.1:${normalizePort(profile.port)}`;
+  if (!containerName) return fallbackUrl;
+
+  const portsResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerPortsCommand(containerName)}`);
+  const portsOutput = `${portsResult.stdout}${portsResult.stderr}`.trim();
+  if (portsResult.ok && portsOutput) {
+    try {
+      const bindings = JSON.parse(portsOutput) as Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+      const published = bindings['3142/tcp']?.find((binding) => binding?.HostPort);
+      if (published?.HostPort) {
+        const host = published.HostIp && !['0.0.0.0', '::'].includes(published.HostIp) ? published.HostIp : '127.0.0.1';
+        return `http://${host}:${published.HostPort}`;
+      }
+    } catch {
+      // Fall back to the configured host URL if Docker returns a non-JSON string.
+    }
+  }
+
+  const ipResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerContainerIpCommand(containerName)}`);
+  const containerIp = `${ipResult.stdout}${ipResult.stderr}`.trim();
+  if (ipResult.ok && containerIp) {
+    return `http://${containerIp}:3142`;
+  }
+
+  return fallbackUrl;
 }
 
 export function dockerShellPreamble(): string {
@@ -481,7 +521,7 @@ export async function loadSystemSummary(): Promise<SystemSummary> {
 
 export async function lifecycle(profile: InstallProfile, action: LifecycleAction): Promise<LifecycleResult> {
   const port = normalizePort(profile.port);
-  const dashboardUrl = `http://127.0.0.1:${port}`;
+  let dashboardUrl = `http://127.0.0.1:${port}`;
 
   if (profile.mode === 'docker') {
     const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
@@ -489,6 +529,8 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     const containerName = resolved.actualName || resolved.requestedName;
     const quotedName = dockerQuotedName(containerName);
     const missingContainer = !resolved.actualName;
+
+    dashboardUrl = await resolveDockerDashboardUrl(profile, dockerPreamble, resolved.actualName);
 
     if (missingContainer) {
       if (action === 'start' || action === 'restart') {
@@ -578,11 +620,12 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
 }
 
 export async function detectInstallState(profile: InstallProfile): Promise<InstallState> {
-  const dashboardUrl = `http://127.0.0.1:${normalizePort(profile.port)}`;
+  let dashboardUrl = `http://127.0.0.1:${normalizePort(profile.port)}`;
 
   if (profile.mode === 'docker') {
     const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
     const resolved = await resolveDockerContainer(profile, dockerPreamble);
+    dashboardUrl = await resolveDockerDashboardUrl(profile, dockerPreamble, resolved.actualName);
 
     if (!resolved.actualName) {
       return {
