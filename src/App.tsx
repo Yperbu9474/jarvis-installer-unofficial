@@ -540,20 +540,25 @@ export default function App() {
       return;
     }
 
-    if (terminalId) {
-      await window.jarvisApi.terminalClose(terminalId);
-      setTerminalId(null);
-      terminalRef.current?.clear();
-    }
-    const session = await window.jarvisApi.terminalCreate({ profile: normalizedProfile, purpose: 'onboard' });
-    setTerminalId(session.id);
-    setActivity('Interactive onboarding is running below.');
-    setTimeout(() => {
-      fitRef.current?.fit();
-      if (terminalRef.current) {
-        void window.jarvisApi.terminalResize(session.id, terminalRef.current.cols, terminalRef.current.rows);
+    try {
+      if (terminalId) {
+        await window.jarvisApi.terminalClose(terminalId);
+        setTerminalId(null);
+        terminalRef.current?.clear();
       }
-    }, 50);
+      const session = await window.jarvisApi.terminalCreate({ profile: normalizedProfile, purpose: 'onboard' });
+      setTerminalId(session.id);
+      setActivity('Jarvis onboarding is running in the embedded terminal below.');
+      setTimeout(() => {
+        fitRef.current?.fit();
+        if (terminalRef.current) {
+          void window.jarvisApi.terminalResize(session.id, terminalRef.current.cols, terminalRef.current.rows);
+        }
+      }, 50);
+    } catch (error) {
+      setLogText(String(error));
+      setActivity('Failed to start Jarvis onboarding.');
+    }
   }
 
   const handleSetupProxy = async () => {
@@ -807,7 +812,7 @@ export default function App() {
               ⊞ Install / Repair
             </button>
             <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void openOnboarding()}>
-              ↳ Onboarding
+              ↳ Jarvis onboard
             </button>
             <button className="ghost" disabled={busy || !isProfileValid} onClick={() => void handleLifecycle('status')}>
               ◎ Status

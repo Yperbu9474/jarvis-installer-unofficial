@@ -686,7 +686,9 @@ export async function installJarvis(
       });
 
   progress.flush();
-  progress.finish(result.ok);
+
+  let installOk = result.ok;
+  let installOutput = stripProgressMarkers(`${result.stdout}${result.stderr}`);
 
   if (result.ok) {
     let profileToSave = effectiveProfile;
@@ -703,10 +705,32 @@ export async function installJarvis(
       }
     }
     await saveProfile(profileToSave);
+
+    if (profileToSave.mode === 'docker') {
+      notifyProgress?.({ percent: 98, message: 'Verifying Docker container' });
+      let dockerState = await detectInstallState(profileToSave);
+
+      if (!dockerState.installed) {
+        const repaired = await lifecycle(profileToSave, 'start');
+        const repairedOutput = repaired.output?.trim();
+        if (repairedOutput) {
+          installOutput = installOutput ? `${installOutput}\n${repairedOutput}` : repairedOutput;
+        }
+        dockerState = await detectInstallState(profileToSave);
+      }
+
+      if (!dockerState.installed) {
+        installOk = false;
+        const failureMessage = 'Jarvis install finished, but the Docker container was not created successfully.';
+        installOutput = installOutput ? `${installOutput}\n${failureMessage}` : failureMessage;
+      }
+    }
   }
+
+  progress.finish(installOk);
   return {
-    ok: result.ok,
-    output: stripProgressMarkers(`${result.stdout}${result.stderr}`),
+    ok: installOk,
+    output: installOutput,
     dashboardUrl: `http://localhost:${normalizePort(profile.port)}`,
   };
 }

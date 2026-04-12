@@ -142,6 +142,95 @@ function bashQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+function dockerQuotedName(containerName: string): string {
+  return os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
+}
+
+function buildDockerInspectCommand(containerName: string): string {
+  return `docker_cmd inspect ${dockerQuotedName(containerName)} --format "{{.State.Status}}"`;
+}
+
+function buildDockerRunCommand(profile: InstallProfile): string {
+  const port = normalizePort(profile.port);
+  const containerName = profile.containerName || 'jarvis-daemon';
+  const dataDir = profile.dataDir || '~/.jarvis-docker';
+
+  if (os.platform() === 'win32') {
+    return `docker_cmd run --detach --name ${dockerQuotedName(containerName)} --restart unless-stopped --publish "${port}:3142" --volume "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest`;
+  }
+
+  return `docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`;
+}
+
+function isMissingDockerContainer(output: string): boolean {
+  return /no such (container|object)|not found/i.test(output);
+}
+
+type DockerContainerCandidate = {
+  name: string;
+  status: string;
+  ports: string;
+};
+
+function buildDockerListCommand(): string {
+  return 'docker_cmd ps -a --filter "ancestor=ghcr.io/vierisid/jarvis:latest" --format "{{.Names}}\t{{.Status}}\t{{.Ports}}"';
+}
+
+function parseDockerCandidates(output: string): DockerContainerCandidate[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name = '', status = '', ports = ''] = line.split('\t');
+      return {
+        name: name.trim(),
+        status: status.trim(),
+        ports: ports.trim(),
+      };
+    })
+    .filter((candidate) => candidate.name);
+}
+
+function pickDockerCandidate(
+  candidates: DockerContainerCandidate[],
+  expectedName: string,
+  port: number,
+): DockerContainerCandidate | null {
+  const exact = candidates.find((candidate) => candidate.name === expectedName);
+  if (exact) return exact;
+
+  const portMatch = candidates.find((candidate) => candidate.ports.includes(`${port}->3142`) || candidate.ports.includes(`:${port}->3142`));
+  if (portMatch) return portMatch;
+
+  const running = candidates.find((candidate) => /up|running/i.test(candidate.status));
+  if (running) return running;
+
+  return candidates.length === 1 ? candidates[0] : candidates[0] || null;
+}
+
+async function resolveDockerContainer(
+  profile: InstallProfile,
+  dockerPreamble: string,
+): Promise<{ requestedName: string; actualName: string | null; adopted: boolean }> {
+  const requestedName = profile.containerName || 'jarvis-daemon';
+  const port = normalizePort(profile.port);
+  const inspectResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerInspectCommand(requestedName)}`);
+  const inspectOutput = `${inspectResult.stdout}${inspectResult.stderr}`.trim();
+
+  if (inspectResult.ok || !isMissingDockerContainer(inspectOutput)) {
+    return { requestedName, actualName: requestedName, adopted: false };
+  }
+
+  const listResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerListCommand()}`);
+  const candidate = pickDockerCandidate(parseDockerCandidates(`${listResult.stdout}${listResult.stderr}`), requestedName, port);
+  return {
+    requestedName,
+    actualName: candidate?.name || null,
+    adopted: Boolean(candidate && candidate.name !== requestedName),
+  };
+}
+
 export function dockerShellPreamble(): string {
   return `
 set -euo pipefail
@@ -296,11 +385,54 @@ function docker_cmd {
 `;
 }
 
-export function buildTerminalLaunch(
+export async function buildTerminalLaunch(
   profile: InstallProfile,
   purpose: 'onboard' | 'shell',
-): { shell: string; args: string[]; env?: NodeJS.ProcessEnv } {
+): Promise<{ shell: string; args: string[]; env?: NodeJS.ProcessEnv }> {
   const jarvisCommand = purpose === 'onboard' ? 'jarvis onboard' : 'jarvis help';
+
+  if (profile.mode === 'docker') {
+    const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
+    const resolved = await resolveDockerContainer(profile, dockerPreamble);
+    const containerName = resolved.actualName;
+
+    if (!containerName) {
+      throw new Error('No Jarvis Docker container detected. Install or repair Jarvis first.');
+    }
+
+    const statusResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerInspectCommand(containerName)}`);
+    const statusOutput = `${statusResult.stdout}${statusResult.stderr}`.trim().toLowerCase();
+    if (!statusOutput.includes('running')) {
+      const startResult = await runProfileCommand(profile, `${dockerPreamble}\ndocker_cmd start ${dockerQuotedName(containerName)}`);
+      if (!startResult.ok) {
+        throw new Error(`${startResult.stdout}${startResult.stderr}`.trim() || `Failed to start Docker container ${containerName}.`);
+      }
+    }
+
+    const notice = resolved.adopted
+      ? `printf '%s\\n' ${bashQuote(`Using detected Docker container ${containerName} instead of ${resolved.requestedName}.`)}; `
+      : '';
+
+    if (os.platform() === 'win32') {
+      return {
+        shell: 'powershell.exe',
+        args: [
+          '-NoExit',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          `${dockerPreamble}\n` +
+          (resolved.adopted ? `Write-Host ${dockerQuotedName(`Using detected Docker container ${containerName} instead of ${resolved.requestedName}.`)}\n` : '') +
+          `docker_cmd exec -it ${dockerQuotedName(containerName)} sh -lc ${dockerQuotedName(jarvisCommand)}`,
+        ],
+      };
+    }
+
+    return {
+      shell: process.env.SHELL || '/bin/bash',
+      args: ['-lc', `${dockerPreamble}\n${notice}docker_cmd exec -it ${bashQuote(containerName)} sh -lc ${bashQuote(jarvisCommand)}; exec \${SHELL:-bash}`],
+    };
+  }
 
   if (profile.mode === 'wsl2') {
     const distro = sanitizeWslDistro(profile.wslDistro);
@@ -352,20 +484,80 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
   const dashboardUrl = `http://localhost:${port}`;
 
   if (profile.mode === 'docker') {
-    const containerName = profile.containerName || 'jarvis-daemon';
-    const quotedName = os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
+    const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
+    const resolved = await resolveDockerContainer(profile, dockerPreamble);
+    const containerName = resolved.actualName || resolved.requestedName;
+    const quotedName = dockerQuotedName(containerName);
+    const missingContainer = !resolved.actualName;
+
+    if (missingContainer) {
+      if (action === 'start' || action === 'restart') {
+        const created = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerRunCommand(profile)}`);
+        const createdOutput = `${created.stdout}${created.stderr}`.trim();
+        return {
+          ok: created.ok,
+          action,
+          output: created.ok
+            ? `Created and started Docker container ${containerName}.${createdOutput ? `\n${createdOutput}` : ''}`
+            : createdOutput || `Failed to create Docker container ${containerName}.`,
+          dashboardUrl,
+        };
+      }
+
+      const output =
+        action === 'stop'
+          ? `Docker container ${containerName} does not exist yet. Nothing to stop.`
+          : action === 'logs'
+            ? `Docker container ${containerName} does not exist yet, so there are no logs to show.`
+            : `Docker container ${containerName} does not exist yet. Use Start or Install / Repair to create it.`;
+      return { ok: true, action, output, dashboardUrl };
+    }
+
+    const statusResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerInspectCommand(containerName)}`);
+    const statusOutput = `${statusResult.stdout}${statusResult.stderr}`.trim().toLowerCase();
+    const isRunning = statusOutput.includes('running');
+
+    if (action === 'start' && isRunning) {
+      return {
+        ok: true,
+        action,
+        output: resolved.adopted
+          ? `Using detected Docker container ${containerName} instead of ${resolved.requestedName}.\nDocker container ${containerName} is already running.`
+          : `Docker container ${containerName} is already running.`,
+        dashboardUrl,
+      };
+    }
+
+    if (action === 'logs' && !isRunning) {
+      const started = await runProfileCommand(profile, `${dockerPreamble}\ndocker_cmd start ${quotedName}`);
+      const startedOutput = `${started.stdout}${started.stderr}`.trim();
+      if (!started.ok) {
+        return {
+          ok: false,
+          action,
+          output: resolved.adopted
+            ? `Using detected Docker container ${containerName} instead of ${resolved.requestedName}.\n${startedOutput || `Failed to start Docker container ${containerName}.`}`
+            : startedOutput || `Failed to start Docker container ${containerName}.`,
+          dashboardUrl,
+        };
+      }
+    }
+
     const dockerCommand =
       action === 'status'
-        ? `docker_cmd inspect ${quotedName} --format "{{.State.Status}}"`
+        ? buildDockerInspectCommand(containerName)
         : action === 'logs'
           ? `docker_cmd logs --tail 200 ${quotedName}`
           : `docker_cmd ${action} ${quotedName}`;
-    const dockerScript = `${os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble()}\n${dockerCommand}`;
-    const result = await runProfileCommand(profile, dockerScript);
+    const result = await runProfileCommand(profile, `${dockerPreamble}\n${dockerCommand}`);
+    const output = `${result.stdout}${result.stderr}`.trim();
+    const resolvedOutput = resolved.adopted
+      ? `Using detected Docker container ${containerName} instead of ${resolved.requestedName}.${output ? `\n${output}` : ''}`
+      : output;
     return {
       ok: result.ok,
       action,
-      output: `${result.stdout}${result.stderr}`.trim(),
+      output: resolvedOutput,
       dashboardUrl,
     };
   }
@@ -389,19 +581,31 @@ export async function detectInstallState(profile: InstallProfile): Promise<Insta
   const dashboardUrl = `http://localhost:${normalizePort(profile.port)}`;
 
   if (profile.mode === 'docker') {
-    const containerName = profile.containerName || 'jarvis-daemon';
+    const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
+    const resolved = await resolveDockerContainer(profile, dockerPreamble);
+
+    if (!resolved.actualName) {
+      return {
+        installed: false,
+        running: false,
+        mode: profile.mode,
+        details: 'No Docker container detected.',
+        dashboardUrl,
+      };
+    }
+
     const result = await runProfileCommand(
       profile,
       os.platform() === 'win32'
-        ? `${dockerPowerShellPreamble()}\n$name="${containerName}"; docker_cmd inspect $name --format "{{.State.Status}}" 2>$null`
-        : `${dockerShellPreamble()}\ndocker_cmd inspect '${containerName.replace(/'/g, `'\\''`)}' --format "{{.State.Status}}" 2>/dev/null`,
+        ? `${dockerPreamble}\n${buildDockerInspectCommand(resolved.actualName)} 2>$null`
+        : `${dockerPreamble}\n${buildDockerInspectCommand(resolved.actualName)} 2>/dev/null`,
     );
     const status = `${result.stdout}${result.stderr}`.trim().toLowerCase();
     return {
       installed: result.ok || status.includes('running') || status.includes('exited'),
       running: status.includes('running'),
       mode: profile.mode,
-      details: status || 'No Docker container detected.',
+      details: resolved.adopted ? `Detected Docker container ${resolved.actualName} (${status || 'unknown'}).` : status || 'No Docker container detected.',
       dashboardUrl,
     };
   }

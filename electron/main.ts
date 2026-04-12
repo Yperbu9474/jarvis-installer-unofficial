@@ -83,7 +83,7 @@ ipcMain.handle('jarvis:getInstallerUpdateState', async () => getInstallerUpdateS
 ipcMain.handle('jarvis:applyInstallerUpdate', async () => applyInstallerUpdate());
 
 ipcMain.handle('terminal:create', async (_event, payload) => {
-  const id = createTerminal(payload, (data) => {
+  const id = await createTerminal(payload, (data) => {
     mainWindow?.webContents.send('terminal:data', { id, data });
   });
   return { id };
