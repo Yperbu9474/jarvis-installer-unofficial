@@ -26,6 +26,13 @@ log.initialize();
 
 let mainWindow: BrowserWindow | null = null;
 
+function sendToRenderer(channel: string, payload: unknown) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const { webContents } = mainWindow;
+  if (webContents.isDestroyed()) return;
+  webContents.send(channel, payload);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -47,12 +54,16 @@ function createWindow() {
   } else {
     void mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'));
   }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 app.whenReady().then(() => {
   createWindow();
   initInstallerUpdater((state) => {
-    mainWindow?.webContents.send('installer:update', state);
+    sendToRenderer('installer:update', state);
   });
 
   app.on('activate', () => {
@@ -70,7 +81,7 @@ ipcMain.handle('jarvis:detectState', async (_event, profile) => detectJarvisStat
 ipcMain.handle('jarvis:saveProfile', async (_event, profile) => saveProfile(profile));
 ipcMain.handle('jarvis:install', async (_event, profile) =>
   installJarvis(profile, (progress: InstallProgress) => {
-    mainWindow?.webContents.send('jarvis:install-progress', progress);
+    sendToRenderer('jarvis:install-progress', progress);
   }),
 );
 ipcMain.handle('jarvis:update', async (_event, profile) => updateJarvis(profile));
@@ -84,7 +95,7 @@ ipcMain.handle('jarvis:applyInstallerUpdate', async () => applyInstallerUpdate()
 
 ipcMain.handle('terminal:create', async (_event, payload) => {
   const id = await createTerminal(payload, (data) => {
-    mainWindow?.webContents.send('terminal:data', { id, data });
+    sendToRenderer('terminal:data', { id, data });
   });
   return { id };
 });
