@@ -124,7 +124,7 @@ export async function runProfileCommand(
   if (profile.mode === 'wsl2') {
     const distro = sanitizeWslDistro(profile.wslDistro);
     const distroArgs = distro ? ['-d', distro] : [];
-    return execCommand('wsl.exe', [...distroArgs, '--', 'bash', '-lc', script], options);
+    return execCommand('wsl.exe', [...distroArgs, '--', '/bin/bash', '-lc', script], options);
   }
 
   if (os.platform() === 'win32') {
@@ -497,7 +497,7 @@ export async function buildTerminalLaunch(
     const distroArgs = distro ? ['-d', distro] : [];
     return {
       shell: 'wsl.exe',
-      args: [...distroArgs, '--', 'bash', '-c', bunPathPreamble() + jarvisCommand + '; exec ${SHELL:-bash}'],
+      args: [...distroArgs, '--', '/bin/bash', '-c', bunPathPreamble() + jarvisCommand + '; exec /bin/bash'],
     };
   }
 

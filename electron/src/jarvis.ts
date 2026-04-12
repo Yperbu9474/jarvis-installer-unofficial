@@ -462,9 +462,9 @@ function Ensure-WslDistro([string]$WslCommand, [string]$PreferredName) {
 }
 
 function Ensure-WslJarvisUser([string]$WslCommand, [string]$DistroName) {
-  $existingUser = (& $WslCommand -d $DistroName -- bash -lc "id -un" 2>$null | Out-String).Trim()
+  $existingUser = (& $WslCommand -d $DistroName -- /bin/bash -lc "id -un" 2>$null | Out-String).Trim()
   if (-not $existingUser -or $existingUser -eq 'root') {
-    $existingUser = (& $WslCommand -d $DistroName -u root -- bash -lc "getent passwd 1000 | cut -d: -f1" 2>$null | Out-String).Trim()
+    $existingUser = (& $WslCommand -d $DistroName -u root -- /bin/bash -lc "getent passwd 1000 | cut -d: -f1" 2>$null | Out-String).Trim()
   }
 
   $existingUser = ($existingUser -replace '\s+', '')
@@ -501,7 +501,7 @@ printf '[user]\ndefault=%s\n' "$TARGET_USER" >/etc/wsl.conf
 '@
 
   $bootstrapWithEnv = ('export TARGET_USER=' + $existingUser + [char]10 + $bootstrap).Replace([string][char]13, '')
-  $bootstrapWithEnv | & $WslCommand -d $DistroName -u root -- bash -s --
+  $bootstrapWithEnv | & $WslCommand -d $DistroName -u root -- /bin/bash -s --
   if ($LASTEXITCODE -ne 0) {
     throw 'Failed to prepare a Linux user for Jarvis inside WSL.'
   }
@@ -520,7 +520,7 @@ $installScript = $installScript.Replace([string][char]13, '')
 
 Write-Host "JARVIS_WSL_DISTRO=$selectedDistro"
 Write-Host "JARVIS_PROGRESS:65:Running Jarvis install inside WSL"
-$installScript | & $wslCommand -d $selectedDistro -u $selectedUser -- bash -s --
+$installScript | & $wslCommand -d $selectedDistro -u $selectedUser -- /bin/bash -s --
 `;
 }
 
