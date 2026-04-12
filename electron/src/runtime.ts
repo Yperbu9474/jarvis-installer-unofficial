@@ -142,6 +142,10 @@ function bashQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+function pwshQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 function dockerQuotedName(containerName: string): string {
   return os.platform() === 'win32' ? `"${containerName}"` : `'${containerName.replace(/'/g, `'\\''`)}'`;
 }
@@ -164,7 +168,21 @@ function buildDockerRunCommand(profile: InstallProfile): string {
   const dataDir = profile.dataDir || '~/.jarvis-docker';
 
   if (os.platform() === 'win32') {
-    return `docker_cmd run --detach --name ${dockerQuotedName(containerName)} --restart unless-stopped --publish "${port}:3142" --volume "${dataDir}:/data" ghcr.io/vierisid/jarvis:latest`;
+    return `
+$dockerRunArgs = @(
+  'run',
+  '--detach',
+  '--name',
+  ${pwshQuote(containerName)},
+  '--restart',
+  'unless-stopped',
+  '--publish',
+  ${pwshQuote(`${port}:3142`)},
+  '--volume',
+  ${pwshQuote(`${dataDir}:/data`)},
+  'ghcr.io/vierisid/jarvis:latest'
+)
+docker_cmd @dockerRunArgs`.trim();
   }
 
   return `docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`;

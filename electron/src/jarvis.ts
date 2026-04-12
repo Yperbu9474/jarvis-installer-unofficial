@@ -546,7 +546,7 @@ docker_cmd pull ghcr.io/vierisid/jarvis:latest
 ${buildDockerDataPrepCommand(profile)}
 try { docker_cmd rm --force $containerName 2>$null | Out-Null } catch { }
 Write-Host 'JARVIS_PROGRESS:96:Starting Jarvis container'
-docker_cmd run --detach --name $containerName --restart unless-stopped --publish ${pwshQuote(`${port}:3142`)} --volume ${pwshQuote(`${dataDir}:/data`)} ghcr.io/vierisid/jarvis:latest
+${buildDockerRunCommand(profile)}
 `;
     }
 
@@ -590,7 +590,21 @@ function buildDockerRunCommand(profile: InstallProfile): string {
   const dataDir = profile.dataDir || '~/.jarvis-docker';
 
   if (os.platform() === 'win32') {
-    return `docker_cmd run --detach --name $containerName --restart unless-stopped --publish ${pwshQuote(`${port}:3142`)} --volume ${pwshQuote(`${dataDir}:/data`)} ghcr.io/vierisid/jarvis:latest`;
+    return `
+$dockerRunArgs = @(
+  'run',
+  '--detach',
+  '--name',
+  $containerName,
+  '--restart',
+  'unless-stopped',
+  '--publish',
+  ${pwshQuote(`${port}:3142`)},
+  '--volume',
+  ${pwshQuote(`${dataDir}:/data`)},
+  'ghcr.io/vierisid/jarvis:latest'
+)
+docker_cmd @dockerRunArgs`.trim();
   }
 
   return `docker_cmd run -d --name ${bashQuote(containerName)} --restart unless-stopped -p ${port}:3142 -v ${bashQuote(dataDir)}:/data ghcr.io/vierisid/jarvis:latest`;
