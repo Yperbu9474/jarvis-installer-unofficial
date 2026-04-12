@@ -386,6 +386,16 @@ export default function App() {
     terminal.open(terminalMount.current);
     fitAddon.fit();
     terminal.focus();
+    terminal.attachCustomKeyEventHandler((event) => {
+      const isPasteShortcut =
+        ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'v')
+        || (event.shiftKey && event.key === 'Insert');
+      if (event.type === 'keydown' && isPasteShortcut) {
+        void pasteTerminalClipboard();
+        return false;
+      }
+      return true;
+    });
     terminal.onData((data) => {
       const id = terminalIdRef.current;
       if (id) void window.jarvisApi.terminalWrite(id, data);
@@ -426,6 +436,20 @@ export default function App() {
       })),
     [summary],
   );
+
+  async function pasteTerminalClipboard(text?: string) {
+    const id = terminalIdRef.current;
+    if (!id) return;
+
+    try {
+      const clipboardText = text ?? await navigator.clipboard.readText();
+      if (!clipboardText) return;
+      await window.jarvisApi.terminalWrite(id, clipboardText);
+      terminalRef.current?.focus();
+    } catch {
+      setActivity('Clipboard paste is unavailable in the embedded terminal right now.');
+    }
+  }
 
   async function persistProfile(nextProfile: InstallProfile) {
     const normalized = normalizeProfile(nextProfile, summary);
@@ -894,7 +918,15 @@ export default function App() {
               </button>
             ) : null}
           </div>
-          <div className="terminalMount" ref={terminalMount} onClick={() => terminalRef.current?.focus()} />
+          <div
+            className="terminalMount"
+            ref={terminalMount}
+            onClick={() => terminalRef.current?.focus()}
+            onPaste={(event) => {
+              event.preventDefault();
+              void pasteTerminalClipboard(event.clipboardData.getData('text'));
+            }}
+          />
         </section>
 
         <div className="sectionLabel">§ REVERSE PROXY</div>
