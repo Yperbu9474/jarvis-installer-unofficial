@@ -1,6 +1,6 @@
 import os from 'node:os';
 import crypto from 'node:crypto';
-import pty from 'node-pty';
+import * as pty from 'node-pty';
 import type { InstallProfile } from '../../src/lib/types';
 import { buildTerminalLaunch } from './runtime';
 
