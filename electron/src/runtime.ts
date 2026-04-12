@@ -192,6 +192,26 @@ function isMissingDockerContainer(output: string): boolean {
   return /no such (container|object)|not found/i.test(output);
 }
 
+function isDockerCliError(output: string): boolean {
+  return /error response from daemon|cannot connect to the docker daemon|failed to connect to the docker api|docker cli not found|no such (container|object)|not found/i.test(output);
+}
+
+function isDockerStatusValue(value: string): boolean {
+  return /^(created|running|paused|restarting|removing|exited|dead)$/i.test(stripControlNulls(value));
+}
+
+function isIpv4Address(value: string): boolean {
+  const normalized = stripControlNulls(value);
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalized)) {
+    return false;
+  }
+
+  return normalized.split('.').every((segment) => {
+    const parsed = Number.parseInt(segment, 10);
+    return parsed >= 0 && parsed <= 255;
+  });
+}
+
 type DockerContainerCandidate = {
   name: string;
   status: string;
@@ -242,9 +262,20 @@ async function resolveDockerContainer(
   const requestedName = profile.containerName || 'jarvis-daemon';
   const port = normalizePort(profile.port);
   const inspectResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerInspectCommand(requestedName)}`);
+  const inspectStdout = stripControlNulls(inspectResult.stdout);
   const inspectOutput = `${inspectResult.stdout}${inspectResult.stderr}`.trim();
 
-  if (inspectResult.ok || !isMissingDockerContainer(inspectOutput)) {
+  if (isMissingDockerContainer(inspectOutput)) {
+    const listResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerListCommand()}`);
+    const candidate = pickDockerCandidate(parseDockerCandidates(`${listResult.stdout}${listResult.stderr}`), requestedName, port);
+    return {
+      requestedName,
+      actualName: candidate?.name || null,
+      adopted: Boolean(candidate && candidate.name !== requestedName),
+    };
+  }
+
+  if (inspectResult.ok && inspectStdout && isDockerStatusValue(inspectStdout) && !isDockerCliError(inspectOutput)) {
     return { requestedName, actualName: requestedName, adopted: false };
   }
 
@@ -266,10 +297,11 @@ async function resolveDockerDashboardUrl(
   if (!containerName) return fallbackUrl;
 
   const portsResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerPortsCommand(containerName)}`);
+  const portsStdout = stripControlNulls(portsResult.stdout);
   const portsOutput = `${portsResult.stdout}${portsResult.stderr}`.trim();
-  if (portsResult.ok && portsOutput) {
+  if (portsResult.ok && portsStdout && !isDockerCliError(portsOutput)) {
     try {
-      const bindings = JSON.parse(portsOutput) as Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+      const bindings = JSON.parse(portsStdout) as Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
       const published = bindings['3142/tcp']?.find((binding) => binding?.HostPort);
       if (published?.HostPort) {
         const host = published.HostIp && !['0.0.0.0', '::'].includes(published.HostIp) ? published.HostIp : '127.0.0.1';
@@ -281,8 +313,9 @@ async function resolveDockerDashboardUrl(
   }
 
   const ipResult = await runProfileCommand(profile, `${dockerPreamble}\n${buildDockerContainerIpCommand(containerName)}`);
-  const containerIp = `${ipResult.stdout}${ipResult.stderr}`.trim();
-  if (ipResult.ok && containerIp) {
+  const containerIp = stripControlNulls(ipResult.stdout);
+  const ipOutput = `${ipResult.stdout}${ipResult.stderr}`.trim();
+  if (ipResult.ok && isIpv4Address(containerIp) && !isDockerCliError(ipOutput)) {
     return `http://${containerIp}:3142`;
   }
 
