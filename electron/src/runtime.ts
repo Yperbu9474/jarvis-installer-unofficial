@@ -134,6 +134,99 @@ export async function runProfileCommand(
   return execCommand('bash', ['-lc', script], options);
 }
 
+function parsePidList(output: string): number[] {
+  return [...new Set(
+    output
+      .split(/\r?\n/)
+      .flatMap((line) => line.match(/\d+/g) ?? [])
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
+  )];
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return !isPidAlive(pid);
+}
+
+async function findLocalListeningPids(port: number): Promise<number[]> {
+  if (os.platform() === 'win32') {
+    const result = await execCommand('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join "\\n"`,
+    ]);
+    return parsePidList(result.stdout);
+  }
+
+  const lsofResult = await execCommand('bash', ['-lc', `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`]);
+  const lsofPids = parsePidList(lsofResult.stdout);
+  if (lsofPids.length > 0) return lsofPids;
+
+  const ssResult = await execCommand('bash', ['-lc', `ss -ltnp '( sport = :${port} )' 2>/dev/null || true`]);
+  return [...new Set(
+    Array.from(ssResult.stdout.matchAll(/pid=(\d+)/g))
+      .map((match) => Number.parseInt(match[1]!, 10))
+      .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
+  )];
+}
+
+async function ensureLocalPortReleased(port: number): Promise<{ released: boolean; terminated: number[]; forced: number[] }> {
+  const initialPids = await findLocalListeningPids(port);
+  if (initialPids.length === 0) {
+    return { released: true, terminated: [], forced: [] };
+  }
+
+  const terminated: number[] = [];
+  const forced: number[] = [];
+
+  for (const pid of initialPids) {
+    if (!isPidAlive(pid)) continue;
+    try {
+      process.kill(pid, 'SIGTERM');
+      if (await waitForExit(pid, 2000)) {
+        terminated.push(pid);
+        continue;
+      }
+    } catch {
+      // Fall through to verification and force-kill path.
+    }
+
+    if (!isPidAlive(pid)) {
+      terminated.push(pid);
+      continue;
+    }
+
+    try {
+      process.kill(pid, 'SIGKILL');
+      if (await waitForExit(pid, 1000)) {
+        forced.push(pid);
+      }
+    } catch {
+      // Ignore individual kill failures and verify final port state below.
+    }
+  }
+
+  return {
+    released: (await findLocalListeningPids(port)).length === 0,
+    terminated,
+    forced,
+  };
+}
+
 function bunPathPreamble(): string {
   return 'export BUN_INSTALL="$HOME/.bun"; export PATH="$HOME/.bun/bin:$PATH"; ';
 }
@@ -674,6 +767,21 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     profile,
     action === 'logs' ? `${preamble}jarvis logs -n 200` : action === 'start' ? startCmd : `${preamble}jarvis ${action}`,
   );
+  if (profile.mode === 'native' && action === 'stop') {
+    const cleanup = await ensureLocalPortReleased(port);
+    const cleanupLines = [
+      result.stdout,
+      result.stderr,
+      cleanup.terminated.length > 0 ? `Cleaned up lingering listener(s) on port ${port}: ${cleanup.terminated.join(', ')}` : '',
+      cleanup.forced.length > 0 ? `Force-killed lingering listener(s) on port ${port}: ${cleanup.forced.join(', ')}` : '',
+    ].filter(Boolean);
+    return {
+      ok: cleanup.released && (result.ok || cleanup.terminated.length > 0 || cleanup.forced.length > 0),
+      action,
+      output: cleanupLines.join('\n').trim(),
+      dashboardUrl,
+    };
+  }
   return {
     ok: result.ok,
     action,

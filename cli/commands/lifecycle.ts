@@ -1,4 +1,4 @@
-import { error, log, ok, run, runLive, loadProfile, getDockerCommand, shellEscape } from '../utils';
+import { error, log, ok, run, runLive, loadProfile, getDockerCommand, shellEscape, ensurePortReleased } from '../utils';
 
 export async function runLifecycle(action: string, _args: string[]): Promise<void> {
   const profile = loadProfile();
@@ -7,7 +7,7 @@ export async function runLifecycle(action: string, _args: string[]): Promise<voi
     process.exit(1);
   }
 
-  const { mode, containerName = 'jarvis-daemon' } = profile;
+  const { mode, containerName = 'jarvis-daemon', port = 3142 } = profile;
 
   if (mode === 'docker') {
     const dockerCommand = await getDockerCommand();
@@ -57,7 +57,19 @@ export async function runLifecycle(action: string, _args: string[]): Promise<voi
       case 'stop': {
         log('Stopping Jarvis daemon...');
         const result = await run('jarvis stop');
-        if (result.ok) { ok('Stopped.'); } else { error(result.output); process.exit(1); }
+        const cleanup = await ensurePortReleased(port);
+        if (cleanup.released && (result.ok || cleanup.terminated.length > 0 || cleanup.forced.length > 0)) {
+          const suffix =
+            cleanup.forced.length > 0
+              ? ` Force-killed lingering listener(s) on port ${port}: ${cleanup.forced.join(', ')}.`
+              : cleanup.terminated.length > 0
+                ? ` Cleaned up lingering listener(s) on port ${port}: ${cleanup.terminated.join(', ')}.`
+                : '';
+          ok(`Stopped.${suffix}`);
+        } else {
+          error(result.output || `Port ${port} is still occupied after attempting to stop Jarvis.`);
+          process.exit(1);
+        }
         break;
       }
       case 'restart': {
