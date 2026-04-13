@@ -1,5 +1,6 @@
 import os from 'node:os';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import type { InstallMode, InstallProfile, InstallState, LifecycleAction, LifecycleResult, SystemSummary } from '../../src/lib/types';
 
 type CommandResult = {
@@ -162,39 +163,95 @@ async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   return !isPidAlive(pid);
 }
 
-async function findLocalListeningPids(port: number): Promise<number[]> {
+/**
+ * Check whether a PID belongs to a Jarvis-related process by inspecting its
+ * command line.  Returns false when the process cannot be inspected.
+ */
+async function isJarvisProcess(pid: number): Promise<boolean> {
+  if (os.platform() === 'win32') {
+    const result = await execCommand('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).Path`,
+    ]);
+    return result.ok && /jarvis|bun/i.test(result.stdout);
+  }
+  const result = await execCommand('bash', ['-lc', `ps -p ${pid} -o args= 2>/dev/null`]);
+  return result.ok && /jarvis/i.test(result.stdout);
+}
+
+/**
+ * Attempt to bind to `port` on 127.0.0.1 as a reliable check that nothing is
+ * listening.  Works even when lsof/ss are unavailable.
+ */
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function findLocalListeningPids(port: number): Promise<{ pids: number[]; toolAvailable: boolean }> {
   if (os.platform() === 'win32') {
     const result = await execCommand('powershell.exe', [
       '-NoProfile',
       '-Command',
       `(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join "\\n"`,
     ]);
-    return parsePidList(result.stdout);
+    return { pids: parsePidList(result.stdout), toolAvailable: true };
   }
 
-  const lsofResult = await execCommand('bash', ['-lc', `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`]);
-  const lsofPids = parsePidList(lsofResult.stdout);
-  if (lsofPids.length > 0) return lsofPids;
+  // Try lsof first — don't swallow tool-absence with `|| true`.
+  const hasLsof = await execCommand('bash', ['-lc', 'command -v lsof >/dev/null 2>&1']);
+  if (hasLsof.ok) {
+    const lsofResult = await execCommand('bash', ['-lc', `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null`]);
+    const lsofPids = parsePidList(lsofResult.stdout);
+    if (lsofPids.length > 0) return { pids: lsofPids, toolAvailable: true };
+    return { pids: [], toolAvailable: true };
+  }
 
-  const ssResult = await execCommand('bash', ['-lc', `ss -ltnp '( sport = :${port} )' 2>/dev/null || true`]);
-  return [...new Set(
-    Array.from(ssResult.stdout.matchAll(/pid=(\d+)/g))
-      .map((match) => Number.parseInt(match[1]!, 10))
-      .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
-  )];
+  // Fall back to ss.
+  const hasSs = await execCommand('bash', ['-lc', 'command -v ss >/dev/null 2>&1']);
+  if (hasSs.ok) {
+    const ssResult = await execCommand('bash', ['-lc', `ss -ltnp '( sport = :${port} )' 2>/dev/null`]);
+    const ssPids = [...new Set(
+      Array.from(ssResult.stdout.matchAll(/pid=(\d+)/g))
+        .map((match) => Number.parseInt(match[1]!, 10))
+        .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
+    )];
+    return { pids: ssPids, toolAvailable: true };
+  }
+
+  // Neither tool available — caller must use a fallback verification.
+  return { pids: [], toolAvailable: false };
 }
 
-async function ensureLocalPortReleased(port: number): Promise<{ released: boolean; terminated: number[]; forced: number[] }> {
-  const initialPids = await findLocalListeningPids(port);
-  if (initialPids.length === 0) {
-    return { released: true, terminated: [], forced: [] };
+async function ensureLocalPortReleased(port: number): Promise<{ released: boolean; terminated: number[]; forced: number[]; skippedNonJarvis: number[] }> {
+  const initial = await findLocalListeningPids(port);
+
+  if (initial.pids.length === 0) {
+    // No PIDs found — always confirm with a bind check because lsof/ss can
+    // miss listeners (permissions, race conditions, missing tools).
+    return { released: await isPortFree(port), terminated: [], forced: [], skippedNonJarvis: [] };
   }
 
   const terminated: number[] = [];
   const forced: number[] = [];
+  const skippedNonJarvis: number[] = [];
 
-  for (const pid of initialPids) {
+  for (const pid of initial.pids) {
     if (!isPidAlive(pid)) continue;
+
+    // Only kill processes that look like Jarvis; skip unrelated listeners.
+    if (!(await isJarvisProcess(pid))) {
+      skippedNonJarvis.push(pid);
+      continue;
+    }
+
     try {
       process.kill(pid, 'SIGTERM');
       if (await waitForExit(pid, 2000)) {
@@ -220,10 +277,12 @@ async function ensureLocalPortReleased(port: number): Promise<{ released: boolea
     }
   }
 
+  // Use bind check as the authoritative final verification.
   return {
-    released: (await findLocalListeningPids(port)).length === 0,
+    released: await isPortFree(port),
     terminated,
     forced,
+    skippedNonJarvis,
   };
 }
 
@@ -772,11 +831,14 @@ export async function lifecycle(profile: InstallProfile, action: LifecycleAction
     const cleanupLines = [
       result.stdout,
       result.stderr,
-      cleanup.terminated.length > 0 ? `Cleaned up lingering listener(s) on port ${port}: ${cleanup.terminated.join(', ')}` : '',
-      cleanup.forced.length > 0 ? `Force-killed lingering listener(s) on port ${port}: ${cleanup.forced.join(', ')}` : '',
+      cleanup.terminated.length > 0 ? `Cleaned up lingering Jarvis listener(s) on port ${port}: ${cleanup.terminated.join(', ')}` : '',
+      cleanup.forced.length > 0 ? `Force-killed lingering Jarvis listener(s) on port ${port}: ${cleanup.forced.join(', ')}` : '',
+      cleanup.skippedNonJarvis.length > 0 ? `Non-Jarvis process(es) occupying port ${port} were left untouched: PIDs ${cleanup.skippedNonJarvis.join(', ')}` : '',
     ].filter(Boolean);
     return {
-      ok: cleanup.released && (result.ok || cleanup.terminated.length > 0 || cleanup.forced.length > 0),
+      // Require `jarvis stop` to succeed — don't mask failures just because
+      // cleanup freed the port (the killed listener might not have been Jarvis).
+      ok: result.ok && cleanup.released,
       action,
       output: cleanupLines.join('\n').trim(),
       dashboardUrl,

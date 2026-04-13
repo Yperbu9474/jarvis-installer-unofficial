@@ -4,6 +4,7 @@ import * as readline from 'readline';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as net from 'net';
 
 const execAsync = promisify(exec);
 
@@ -91,35 +92,92 @@ async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
   return !isPidAlive(pid);
 }
 
-async function findListeningPids(port: number): Promise<number[]> {
+/**
+ * Check whether a PID belongs to a Jarvis-related process by inspecting its
+ * command line.  Returns false when the process cannot be inspected (already
+ * exited, permission denied, etc.) so the caller defaults to *not* killing.
+ */
+async function isJarvisProcess(pid: number): Promise<boolean> {
   if (process.platform === 'win32') {
-    const result = await run(`powershell -NoProfile -Command "(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join '\n'"`);
-    return parsePidList(result.output);
+    const result = await run(
+      `powershell -NoProfile -Command "(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).Path"`,
+    );
+    return result.ok && /jarvis|bun/i.test(result.output);
   }
-
-  const lsofResult = await run(`lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`);
-  const lsofPids = parsePidList(lsofResult.output);
-  if (lsofPids.length > 0) return lsofPids;
-
-  const ssResult = await run(`ss -ltnp '( sport = :${port} )' 2>/dev/null || true`);
-  return [...new Set(
-    Array.from(ssResult.output.matchAll(/pid=(\d+)/g))
-      .map((match) => Number.parseInt(match[1]!, 10))
-      .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
-  )];
+  const result = await run(`ps -p ${pid} -o args= 2>/dev/null`);
+  return result.ok && /jarvis/i.test(result.output);
 }
 
-export async function ensurePortReleased(port: number): Promise<{ released: boolean; terminated: number[]; forced: number[] }> {
-  const initialPids = await findListeningPids(port);
-  if (initialPids.length === 0) {
-    return { released: true, terminated: [], forced: [] };
+/**
+ * Attempt to bind to `port` on 127.0.0.1 as a reliable check that nothing is
+ * listening.  Works even when lsof/ss are unavailable.
+ */
+function isPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function findListeningPids(port: number): Promise<{ pids: number[]; toolAvailable: boolean }> {
+  if (process.platform === 'win32') {
+    const result = await run(`powershell -NoProfile -Command "(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join '\n'"`);
+    // PowerShell is always available on Windows.
+    return { pids: parsePidList(result.output), toolAvailable: true };
+  }
+
+  // Try lsof first — don't swallow tool-absence with `|| true`.
+  const hasLsof = await run('command -v lsof >/dev/null 2>&1');
+  if (hasLsof.ok) {
+    const lsofResult = await run(`lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null`);
+    const lsofPids = parsePidList(lsofResult.output);
+    if (lsofPids.length > 0) return { pids: lsofPids, toolAvailable: true };
+    // lsof ran but found nothing → port is genuinely free.
+    return { pids: [], toolAvailable: true };
+  }
+
+  // Fall back to ss.
+  const hasSs = await run('command -v ss >/dev/null 2>&1');
+  if (hasSs.ok) {
+    const ssResult = await run(`ss -ltnp '( sport = :${port} )' 2>/dev/null`);
+    const ssPids = [...new Set(
+      Array.from(ssResult.output.matchAll(/pid=(\d+)/g))
+        .map((match) => Number.parseInt(match[1]!, 10))
+        .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
+    )];
+    return { pids: ssPids, toolAvailable: true };
+  }
+
+  // Neither tool available — caller must use a fallback verification.
+  return { pids: [], toolAvailable: false };
+}
+
+export async function ensurePortReleased(port: number): Promise<{ released: boolean; terminated: number[]; forced: number[]; skippedNonJarvis: number[] }> {
+  const initial = await findListeningPids(port);
+
+  if (initial.pids.length === 0) {
+    // No PIDs found — always confirm with a bind check because lsof/ss can
+    // miss listeners (permissions, race conditions, missing tools).
+    return { released: await isPortFree(port), terminated: [], forced: [], skippedNonJarvis: [] };
   }
 
   const terminated: number[] = [];
   const forced: number[] = [];
+  const skippedNonJarvis: number[] = [];
 
-  for (const pid of initialPids) {
+  for (const pid of initial.pids) {
     if (!isPidAlive(pid)) continue;
+
+    // Only kill processes that look like Jarvis; skip unrelated listeners.
+    if (!(await isJarvisProcess(pid))) {
+      skippedNonJarvis.push(pid);
+      continue;
+    }
+
     try {
       process.kill(pid, 'SIGTERM');
       if (await waitForExit(pid, 2000)) {
@@ -145,10 +203,12 @@ export async function ensurePortReleased(port: number): Promise<{ released: bool
     }
   }
 
+  // Use bind check as the authoritative final verification.
   return {
-    released: (await findListeningPids(port)).length === 0,
+    released: await isPortFree(port),
     terminated,
     forced,
+    skippedNonJarvis,
   };
 }
 

@@ -1,4 +1,4 @@
-import { error, log, ok, run, runLive, loadProfile, getDockerCommand, shellEscape, ensurePortReleased } from '../utils';
+import { error, log, ok, warn, run, runLive, loadProfile, getDockerCommand, shellEscape, ensurePortReleased } from '../utils';
 
 export async function runLifecycle(action: string, _args: string[]): Promise<void> {
   const profile = loadProfile();
@@ -58,16 +58,25 @@ export async function runLifecycle(action: string, _args: string[]): Promise<voi
         log('Stopping Jarvis daemon...');
         const result = await run('jarvis stop');
         const cleanup = await ensurePortReleased(port);
-        if (cleanup.released && (result.ok || cleanup.terminated.length > 0 || cleanup.forced.length > 0)) {
-          const suffix =
-            cleanup.forced.length > 0
-              ? ` Force-killed lingering listener(s) on port ${port}: ${cleanup.forced.join(', ')}.`
-              : cleanup.terminated.length > 0
-                ? ` Cleaned up lingering listener(s) on port ${port}: ${cleanup.terminated.join(', ')}.`
-                : '';
-          ok(`Stopped.${suffix}`);
+
+        const cleanupSuffix =
+          cleanup.forced.length > 0
+            ? ` Force-killed lingering Jarvis listener(s) on port ${port}: ${cleanup.forced.join(', ')}.`
+            : cleanup.terminated.length > 0
+              ? ` Cleaned up lingering Jarvis listener(s) on port ${port}: ${cleanup.terminated.join(', ')}.`
+              : '';
+
+        if (cleanup.skippedNonJarvis.length > 0) {
+          warn(`Non-Jarvis process(es) occupying port ${port} were left untouched: PIDs ${cleanup.skippedNonJarvis.join(', ')}.`);
+        }
+
+        if (result.ok && cleanup.released) {
+          ok(`Stopped.${cleanupSuffix}`);
         } else {
-          error(result.output || `Port ${port} is still occupied after attempting to stop Jarvis.`);
+          const failureDetail = !result.ok
+            ? `${result.output || 'Failed to stop Jarvis daemon.'}${cleanupSuffix}${cleanup.released ? ' Port was released during cleanup.' : ''}`
+            : `Port ${port} is still occupied after attempting to stop Jarvis.${cleanupSuffix}`;
+          error(failureDetail);
           process.exit(1);
         }
         break;
