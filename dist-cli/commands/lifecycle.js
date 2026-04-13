@@ -8,7 +8,7 @@ async function runLifecycle(action, _args) {
         (0, utils_1.error)('No Jarvis profile found. Run `jarv install` first.');
         process.exit(1);
     }
-    const { mode, containerName = 'jarvis-daemon' } = profile;
+    const { mode, containerName = 'jarvis-daemon', port = 3142 } = profile;
     if (mode === 'docker') {
         const dockerCommand = await (0, utils_1.getDockerCommand)();
         switch (action) {
@@ -79,11 +79,17 @@ async function runLifecycle(action, _args) {
             case 'stop': {
                 (0, utils_1.log)('Stopping Jarvis daemon...');
                 const result = await (0, utils_1.run)('jarvis stop');
-                if (result.ok) {
-                    (0, utils_1.ok)('Stopped.');
+                const cleanup = await (0, utils_1.ensurePortReleased)(port);
+                if (cleanup.released && (result.ok || cleanup.terminated.length > 0 || cleanup.forced.length > 0)) {
+                    const suffix = cleanup.forced.length > 0
+                        ? ` Force-killed lingering listener(s) on port ${port}: ${cleanup.forced.join(', ')}.`
+                        : cleanup.terminated.length > 0
+                            ? ` Cleaned up lingering listener(s) on port ${port}: ${cleanup.terminated.join(', ')}.`
+                            : '';
+                    (0, utils_1.ok)(`Stopped.${suffix}`);
                 }
                 else {
-                    (0, utils_1.error)(result.output);
+                    (0, utils_1.error)(result.output || `Port ${port} is still occupied after attempting to stop Jarvis.`);
                     process.exit(1);
                 }
                 break;

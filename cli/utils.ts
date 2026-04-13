@@ -63,6 +63,95 @@ export async function runLive(cmd: string): Promise<boolean> {
   });
 }
 
+function parsePidList(output: string): number[] {
+  return [...new Set(
+    output
+      .split(/\r?\n/)
+      .flatMap((line) => line.match(/\d+/g) ?? [])
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
+  )];
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return !isPidAlive(pid);
+}
+
+async function findListeningPids(port: number): Promise<number[]> {
+  if (process.platform === 'win32') {
+    const result = await run(`powershell -NoProfile -Command "(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join '\n'"`);
+    return parsePidList(result.output);
+  }
+
+  const lsofResult = await run(`lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`);
+  const lsofPids = parsePidList(lsofResult.output);
+  if (lsofPids.length > 0) return lsofPids;
+
+  const ssResult = await run(`ss -ltnp '( sport = :${port} )' 2>/dev/null || true`);
+  return [...new Set(
+    Array.from(ssResult.output.matchAll(/pid=(\d+)/g))
+      .map((match) => Number.parseInt(match[1]!, 10))
+      .filter((value) => Number.isInteger(value) && value > 0 && value !== process.pid)
+  )];
+}
+
+export async function ensurePortReleased(port: number): Promise<{ released: boolean; terminated: number[]; forced: number[] }> {
+  const initialPids = await findListeningPids(port);
+  if (initialPids.length === 0) {
+    return { released: true, terminated: [], forced: [] };
+  }
+
+  const terminated: number[] = [];
+  const forced: number[] = [];
+
+  for (const pid of initialPids) {
+    if (!isPidAlive(pid)) continue;
+    try {
+      process.kill(pid, 'SIGTERM');
+      if (await waitForExit(pid, 2000)) {
+        terminated.push(pid);
+        continue;
+      }
+    } catch {
+      // Fall through to final verification.
+    }
+
+    if (!isPidAlive(pid)) {
+      terminated.push(pid);
+      continue;
+    }
+
+    try {
+      process.kill(pid, 'SIGKILL');
+      if (await waitForExit(pid, 1000)) {
+        forced.push(pid);
+      }
+    } catch {
+      // Ignore individual kill failures and verify the port at the end.
+    }
+  }
+
+  return {
+    released: (await findListeningPids(port)).length === 0,
+    terminated,
+    forced,
+  };
+}
+
 export function shellEscape(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
