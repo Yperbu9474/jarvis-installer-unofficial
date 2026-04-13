@@ -646,7 +646,7 @@ export async function buildTerminalLaunch(
 ): Promise<{ shell: string; args: string[]; env?: NodeJS.ProcessEnv }> {
   const posixJarvisCommand =
     purpose === 'onboard'
-      ? withOptionalSudoShim(`jarvis onboard; onboard_status=$?; if [ "$onboard_status" -eq 0 ]; then printf '\nRunning jarvis doctor...\n'; jarvis doctor; fi`)
+      ? withOptionalSudoShim(`jarvis onboard; onboard_status=$?; if [ "$onboard_status" -eq 0 ]; then printf '%b' '\nRunning jarvis doctor...\n'; jarvis doctor; fi`)
       : 'jarvis help';
   const powerShellJarvisCommand =
     purpose === 'onboard'
