@@ -644,7 +644,14 @@ export async function buildTerminalLaunch(
   profile: InstallProfile,
   purpose: 'onboard' | 'shell',
 ): Promise<{ shell: string; args: string[]; env?: NodeJS.ProcessEnv }> {
-  const jarvisCommand = purpose === 'onboard' ? withOptionalSudoShim('jarvis onboard') : 'jarvis help';
+  const posixJarvisCommand =
+    purpose === 'onboard'
+      ? withOptionalSudoShim(`jarvis onboard; onboard_status=$?; if [ "$onboard_status" -eq 0 ]; then printf '\nRunning jarvis doctor...\n'; jarvis doctor; fi`)
+      : 'jarvis help';
+  const powerShellJarvisCommand =
+    purpose === 'onboard'
+      ? "jarvis onboard; if ($LASTEXITCODE -eq 0) { Write-Host ''; Write-Host 'Running jarvis doctor...'; jarvis doctor }"
+      : 'jarvis help';
 
   if (profile.mode === 'docker') {
     const dockerPreamble = os.platform() === 'win32' ? dockerPowerShellPreamble() : dockerShellPreamble();
@@ -678,14 +685,14 @@ export async function buildTerminalLaunch(
           '-Command',
           `${dockerPreamble}\n` +
           (resolved.adopted ? `Write-Host ${dockerQuotedName(`Using detected Docker container ${containerName} instead of ${resolved.requestedName}.`)}\n` : '') +
-          `docker_cmd exec -it ${pwshQuote(containerName)} sh -lc ${pwshQuote(jarvisCommand)}`,
+          `docker_cmd exec -it ${pwshQuote(containerName)} sh -lc ${pwshQuote(posixJarvisCommand)}`,
         ],
       };
     }
 
     return {
       shell: process.env.SHELL || '/bin/bash',
-      args: ['-lc', `${dockerPreamble}\n${notice}docker_cmd exec -it ${bashQuote(containerName)} sh -lc ${bashQuote(jarvisCommand)}; exec \${SHELL:-bash}`],
+      args: ['-lc', `${dockerPreamble}\n${notice}docker_cmd exec -it ${bashQuote(containerName)} sh -lc ${bashQuote(posixJarvisCommand)}; exec \${SHELL:-bash}`],
     };
   }
 
@@ -694,20 +701,20 @@ export async function buildTerminalLaunch(
     const distroArgs = distro ? ['-d', distro] : [];
     return {
       shell: 'wsl.exe',
-      args: [...distroArgs, '--', '/bin/bash', '-c', bunPathPreamble() + jarvisCommand + '; exec /bin/bash'],
+      args: [...distroArgs, '--', '/bin/bash', '-c', bunPathPreamble() + posixJarvisCommand + '; exec /bin/bash'],
     };
   }
 
   if (os.platform() === 'win32') {
     return {
       shell: 'powershell.exe',
-      args: ['-NoExit', '-Command', jarvisCommand],
+      args: ['-NoExit', '-Command', powerShellJarvisCommand],
     };
   }
 
   return {
     shell: process.env.SHELL || '/bin/bash',
-    args: ['-c', bunPathPreamble() + jarvisCommand + '; exec ${SHELL:-bash}'],
+    args: ['-c', bunPathPreamble() + posixJarvisCommand + '; exec ${SHELL:-bash}'],
   };
 }
 
