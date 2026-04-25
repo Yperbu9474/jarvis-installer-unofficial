@@ -425,6 +425,32 @@ function Ensure-WslRuntime {
   return $wslCommand
 }
 
+function Invoke-WslBashScript {
+  param(
+    [string]$WslCommand,
+    [string]$DistroName,
+    [string]$UserName,
+    [string]$Script
+  )
+
+  $normalizedScript = $Script.Replace([string][char]13, '')
+  $scriptBytes = [System.Text.Encoding]::UTF8.GetBytes($normalizedScript)
+  $scriptBase64 = [Convert]::ToBase64String($scriptBytes)
+  $runner = "set -euo pipefail; printf '%s' '$scriptBase64' | base64 -d | /bin/bash -s --"
+  $args = New-Object System.Collections.Generic.List[string]
+  $args.Add('-d')
+  $args.Add($DistroName)
+  if ($UserName) {
+    $args.Add('-u')
+    $args.Add($UserName)
+  }
+  $args.Add('--')
+  $args.Add('/bin/bash')
+  $args.Add('-lc')
+  $args.Add($runner)
+  & $WslCommand @args
+}
+
 function Ensure-WslDistro([string]$WslCommand, [string]$PreferredName) {
   Write-Host 'JARVIS_PROGRESS:28:Checking WSL distro'
   $distros = Get-WslDistros $WslCommand
@@ -501,7 +527,7 @@ printf '[user]\ndefault=%s\n' "$TARGET_USER" >/etc/wsl.conf
 '@
 
   $bootstrapWithEnv = ('export TARGET_USER=' + $existingUser + [char]10 + $bootstrap).Replace([string][char]13, '')
-  $bootstrapWithEnv | & $WslCommand -d $DistroName -u root -- /bin/bash -s --
+  Invoke-WslBashScript -WslCommand $WslCommand -DistroName $DistroName -UserName 'root' -Script $bootstrapWithEnv
   if ($LASTEXITCODE -ne 0) {
     throw 'Failed to prepare a Linux user for Jarvis inside WSL.'
   }
@@ -520,7 +546,7 @@ $installScript = $installScript.Replace([string][char]13, '')
 
 Write-Host "JARVIS_WSL_DISTRO=$selectedDistro"
 Write-Host "JARVIS_PROGRESS:65:Running Jarvis install inside WSL"
-$installScript | & $wslCommand -d $selectedDistro -u $selectedUser -- /bin/bash -s --
+Invoke-WslBashScript -WslCommand $wslCommand -DistroName $selectedDistro -UserName $selectedUser -Script $installScript
 `;
 }
 
